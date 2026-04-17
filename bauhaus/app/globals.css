@@ -1,0 +1,233 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* FrameForge Design System - Bauhaus Constructivist */
+:root {
+  /* Bauhaus Primary Colors */
+  --bauhaus-red: #E30613;
+  --bauhaus-blue: #00509A;
+  --bauhaus-yellow: #F7D117;
+  --bauhaus-green: #009E60;
+  
+  /* Tints */
+  --bauhaus-red-light: #FFCCCC;
+  --bauhaus-red-dark: #990000;
+  --bauhaus-blue-light: #CCE0F5;
+  --bauhaus-blue-dark: #003366;
+  
+  /* Neutrals - Concrete Scale */
+  --off-white: #F0F0F0;
+  --concrete-100: #E0E0E0;
+  --concrete-200: #C0C0C0;
+  --concrete-300: #A0A0A0;
+  --concrete-400: #808080;
+  --concrete-500: #606060;
+  --concrete-600: #404040;
+  --concrete-700: #2A2A2A;
+  --charcoal: #1A1A1A;
+  --black: #000000;
+  
+  /* Semantic Tokens */
+  --background: var(--off-white);
+  --foreground: var(--charcoal);
+  --card: var(--off-white);
+  --card-foreground: var(--charcoal);
+  --popover: var(--off-white);
+  --popover-foreground: var(--charcoal);
+  --primary: var(--bauhaus-red);
+  --primary-foreground: var(--off-white);
+  --secondary: var(--bauhaus-blue);
+  --secondary-foreground: var(--off-white);
+  --muted: var(--concrete-200);
+  --muted-foreground: var(--concrete-500);
+  --accent: var(--bauhaus-yellow);
+  --accent-foreground: var(--charcoal);
+  
+  /* Semantic States */
+  --destructive: var(--bauhaus-red);
+  --destructive-foreground: var(--off-white);
+  --success: var(--bauhaus-green);
+  --success-foreground: var(--off-white);
+  --warning: var(--bauhaus-yellow);
+  --warning-foreground: var(--charcoal);
+  --info: var(--bauhaus-blue);
+  --info-foreground: var(--off-white);
+  
+  /* Borders and inputs */
+  --border: var(--black);
+  --input: var(--off-white);
+  --ring: var(--black);
+  
+  /* Charts - Primary color blocks */
+  --chart-1: var(--bauhaus-red);
+  --chart-2: var(--bauhaus-blue);
+  --chart-3: var(--bauhaus-yellow);
+  --chart-4: var(--bauhaus-green);
+  --chart-5: var(--charcoal);
+  
+  /* Radius - Bauhaus = rectangular */
+  --radius: 0px;
+  
+  /* Sidebar */
+  --sidebar: var(--off-white);
+  --sidebar-foreground: var(--charcoal);
+  --sidebar-primary: var(--bauhaus-red);
+  --sidebar-primary-foreground: var(--off-white);
+  --sidebar-accent: var(--bauhaus-yellow);
+  --sidebar-accent-foreground: var(--charcoal);
+  --sidebar-border: var(--black);
+  --sidebar-ring: var(--black);
+}
+
+@theme inline {
+  --font-sans: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-heading: var(--font-futura), 'Century Gothic', 'Trebuchet MS', sans-serif;
+  --font-mono: var(--font-ibm-plex-mono), 'IBM Plex Mono', Consolas, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  
+  /* Bauhaus Colors */
+  --color-bauhaus-red: var(--bauhaus-red);
+  --color-bauhaus-blue: var(--bauhaus-blue);
+  --color-bauhaus-yellow: var(--bauhaus-yellow);
+  --color-bauhaus-green: var(--bauhaus-green);
+  --color-off-white: var(--off-white);
+  --color-charcoal: var(--charcoal);
+  --color-concrete: var(--concrete-300);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    line-height: 1.4;
+    letter-spacing: -0.01em;
+  }
+}
+
+/* Concrete Texture Overlay */
+.concrete-texture::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.08'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Geometric Block Spinner */
+@keyframes block-spin {
+  0% { transform: rotate(0deg); }
+  25% { transform: rotate(90deg); }
+  50% { transform: rotate(180deg); }
+  75% { transform: rotate(270deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.block-spinner {
+  width: 40px;
+  height: 40px;
+  background-color: var(--bauhaus-red);
+  animation: block-spin 0.8s steps(4) infinite;
+}
+
+/* Skeleton Loader - Concrete Textured */
+.skeleton-block {
+  background-color: var(--concrete-200);
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.15'/%3E%3C/svg%3E");
+}
+
+/* Disabled State - Diagonal Pattern */
+.disabled-pattern {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 4px,
+    var(--concrete-400) 4px,
+    var(--concrete-400) 6px
+  );
+}
+
+/* Scrim Overlay */
+.scrim {
+  background-color: rgba(0, 0, 0, 0.5);
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.1'/%3E%3C/svg%3E");
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--concrete-100);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--charcoal);
+  border: 2px solid var(--black);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--bauhaus-red);
+}
+
+/* Focus ring - solid black 3px */
+*:focus-visible {
+  outline: 3px solid var(--black) !important;
+  outline-offset: 0 !important;
+}
+
+/* No motion - instant transitions */
+* {
+  transition-duration: 50ms !important;
+  transition-timing-function: linear !important;
+}
+
+/* Remove animations for reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
