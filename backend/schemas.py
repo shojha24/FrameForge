@@ -53,6 +53,6 @@ class StoryboardResponse(BaseModel):
         sdxl_prompts (List[str]): The exact text prompts fed into the diffusion model.
         generated_images (List[str]): Base64 encoded strings of the final output images.
     """
-    panel_jsons: list[dict]
-    sdxl_prompts: list[str]
-    generated_images: list[str]
+    panel_jsons: list[dict] = []
+    sdxl_prompts: list[str] = []
+    generated_images: list[str] = []
