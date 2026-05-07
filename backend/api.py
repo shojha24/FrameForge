@@ -11,42 +11,13 @@ Dependencies:
     - Pydantic (for input/output validation schemas)
     - typing.List, typing.Optional
 """
+from fastapi import APIRouter
+from settings import API_PREFIX
+from schemas import StoryboardGenerationRequest, PanelRegenerationRequest, StoryboardResponse
 
-class StoryboardGenerationRequest(BaseModel):
-    """
-    Schema for the initial full storyboard generation request.
-    
-    Attributes:
-        scene_prompt (str): The plain-English description of the scene.
-        visual_style (str): The requested cinematic style keyword (e.g., "noir", "anime").
-        ip_adapter_image (str): Base64 encoded image or URL of the protagonist reference face.
-        num_panels (int): The number of panels to generate for this scene.
-    """
-    pass
+router = APIRouter(prefix=API_PREFIX)
 
-class PanelRegenerationRequest(BaseModel):
-    """
-    Schema for an isolated panel regeneration request.
-    
-    Attributes:
-        panel_json (dict): The edited or original structured metadata for a single panel.
-        custom_prompt (str): The manually overridden SDXL text prompt.
-        ip_adapter_image (str): Base64 encoded image or URL of the protagonist reference face.
-    """
-    pass
-
-class StoryboardResponse(BaseModel):
-    """
-    Schema for the successful return of storyboard data to the frontend.
-    
-    Attributes:
-        panel_jsons (List[dict]): The LLM-generated structural metadata for each panel.
-        sdxl_prompts (List[str]): The exact text prompts fed into the diffusion model.
-        generated_images (List[str]): Base64 encoded strings of the final output images.
-    """
-    pass
-
-@app.post("/generate", response_model=StoryboardResponse)
+@router.post("/generate", response_model=StoryboardResponse)
 async def generate_storyboard(request: StoryboardGenerationRequest):
     """
     Initializes the full scene-to-storyboard generation pipeline.
@@ -63,7 +34,7 @@ async def generate_storyboard(request: StoryboardGenerationRequest):
     """
     pass
 
-@app.post("/regenerate", response_model=StoryboardResponse)
+@router.post("/regenerate", response_model=StoryboardResponse)
 async def regenerate_panel(request: PanelRegenerationRequest):
     """
     Regenerates a single specific panel without affecting the rest of the storyboard.
