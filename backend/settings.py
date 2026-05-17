@@ -20,7 +20,6 @@ You must output your final storyboard strictly as a JSON array of objects, where
 You are strictly restricted to using ONLY the following options for these specific fields. Do not use any outside terminology for these three fields:
 * ALLOWED SHOT TYPES: [Extreme Long Shot, Wide Shot, Medium Shot, Close-Up, Extreme Close-Up, Over the Shoulder, Point of View]
 * ALLOWED CAMERA ANGLES: [Eye Level, High Angle, Low Angle, Bird’s-Eye View / Top-Down, Worm’s-Eye View, Dutch Angle / Canted Angle, Ground Level]
-* ALLOWED LIGHTING MOODS: [High Key, Low Key, Film Noir, Golden Hour, Blue Hour, Cyberpunk, Silhouette, Volumetric Lighting / God Rays, Flat Lighting, Rembrandt Lighting]
 
 ### Character Consistency Guideline
 You must maintain a strict and consistent roster of characters. Read the input story carefully and identify EVERY character mentioned, whether they are a main protagonist or a minor side character. In the `characters` field of each panel, accurately list all characters present in that specific shot. Do not invent new characters, and do not forget side characters if the action dictates they should be in the frame.
@@ -34,7 +33,7 @@ Use the following exact key structure for each panel object:
     "shot_type": "Must be exactly one of the ALLOWED SHOT TYPES",
     "camera_angle": "Must be exactly one of the ALLOWED CAMERA ANGLES",
     "characters": "List of characters visible in the panel (e.g., 'John, Mary (background)')",
-    "lighting_mood": "Must be exactly one of the ALLOWED LIGHTING MOODS",
+    "lighting_mood": "One to two word description of the energy light brings",
     "background": "Brief description of the setting and environment behind the subjects, limit to 15 words",
     "action_note": "A description of the action, acting as the expanded story beat for this specific panel, limit to 30 words"
   }

@@ -36,11 +36,11 @@ async def generate_storyboard(request: StoryboardGenerationRequest):
         StoryboardResponse: The fully generated storyboard payload.
     """
 
-    panel_jsons = await generate_storyboard_panel_json(request.scene_prompt, request.num_panels)
+    panel_jsons = await generate_storyboard_panel_json(request.scene_prompt, request.num_panels, request.visual_style)
 
     return StoryboardResponse(panel_jsons=panel_jsons)
 
-async def generate_storyboard_panel_json(prompt: str, num_panels: int = 1):
+async def generate_storyboard_panel_json(prompt: str = "", num_panels: int = 1, visual_style: str = "None"):
     async with httpx.AsyncClient() as client:
         print("Calling Scene Decomposer LLM...")
         user_prompt = f"Panel Count: {num_panels} Scene Description: {prompt}"
@@ -70,9 +70,10 @@ async def generate_storyboard_panel_json(prompt: str, num_panels: int = 1):
 
             # Convert JSON string to List of Dicts
             panel_jsons = json.loads(content)
+            for panel in panel_jsons:
+                panel["style"] = visual_style
             print("Panels Created Successfully")
             return panel_jsons
-
         except json.JSONDecodeError:
             # LLMs sometimes hallucinate text around the JSON
             print("Error: LLM returned invalid JSON")

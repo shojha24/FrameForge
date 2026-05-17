@@ -11,7 +11,8 @@ Dependencies:
     - Pydantic (for input/output validation schemas)
     - typing.List, typing.Optional
 """
-from pydantic import BaseModel, Base64Str
+from pydantic import BaseModel, Base64Str, field_validator
+
 
 class StoryboardGenerationRequest(BaseModel):
     """
@@ -24,9 +25,23 @@ class StoryboardGenerationRequest(BaseModel):
         num_panels (int): The number of panels to generate for this scene.
     """
     scene_prompt: str
-    visual_style: str
-    ip_adapter_image: Base64Str = ""
+    visual_style: str = "None"
+    ip_adapter_image: Base64Str
     num_panels: int
+
+    @field_validator('scene_prompt')
+    @classmethod
+    def scene_prompt_not_null(cls, p: str) -> str:
+        if not p:
+            raise ValueError("Attribute 'Scene_Prompt' is null.")
+        return p
+
+    @field_validator('num_panels')
+    @classmethod
+    def num_panels_not_null(cls, n: int) -> int:
+        if not n:
+            raise ValueError("Attribute 'Num_Panels' is 0.")
+        return n
 
 
 class PanelRegenerationRequest(BaseModel):
