@@ -9,6 +9,9 @@ load_dotenv(override=True)
 # Project Settings
 PROJECT_NAME = "FrameForge"
 API_PREFIX = "/frame-forge/api"
+ORIGINS = [
+    "http://localhost:3000",  # React port
+]
 
 # System Prompts
 SYSTEM_PROMPT = """
@@ -18,7 +21,7 @@ You must output your final storyboard strictly as a JSON array of objects, where
 
 ### Allowed Parameters (Enums)
 You are strictly restricted to using ONLY the following options for these specific fields. Do not use any outside terminology for these three fields:
-* ALLOWED SHOT TYPES: [Extreme Long Shot, Wide Shot, Medium Shot, Close-Up, Extreme Close-Up, Over the Shoulder, Point of View]
+* ALLOWED SHOT TYPES: ['ECU', 'CU', 'MS', 'WS', 'ELS', 'OTS', 'POV']
 * ALLOWED CAMERA ANGLES: [Eye Level, High Angle, Low Angle, Bird’s-Eye View / Top-Down, Worm’s-Eye View, Dutch Angle / Canted Angle, Ground Level]
 
 ### Character Consistency Guideline
@@ -30,6 +33,7 @@ Your response must be valid JSON only, without any markdown formatting, conversa
 Use the following exact key structure for each panel object:
 [
   {
+    "caption": "A short sentence summary of the panel, limit to 8 words"
     "shot_type": "Must be exactly one of the ALLOWED SHOT TYPES",
     "camera_angle": "Must be exactly one of the ALLOWED CAMERA ANGLES",
     "characters": "List of characters visible in the panel (e.g., 'John, Mary (background)')",
