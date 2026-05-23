@@ -14,6 +14,11 @@ export interface StoryboardPanel {
   order: number
 }
 
+interface PanelInput {
+  shot_type: ShotType;
+  caption: string;
+}
+
 export type AppState = 'empty' | 'loading' | 'generated'
 
 interface StoryboardState {
@@ -45,7 +50,8 @@ interface StoryboardState {
 
 const SHOT_TYPES: ShotType[] = ['ECU', 'CU', 'MS', 'WS', 'ELS', 'OTS', 'POV']
 
-const generateMockPanels = (description: string, style: StyleType, panelCount: number): StoryboardPanel[] => {
+const generateMockPanels = async (description: string, style: StyleType, panelCount: number): Promise<StoryboardPanel[]> => {
+
   // Create a varied shot sequence based on panel count
   const baseSequence: ShotType[] = ['WS', 'MS', 'CU', 'OTS', 'ECU', 'MS', 'WS', 'CU', 'POV', 'ELS', 'MS', 'ECU']
   const shotSequence = baseSequence.slice(0, panelCount)
@@ -56,13 +62,13 @@ const generateMockPanels = (description: string, style: StyleType, panelCount: n
   }
   
   return shotSequence.map((shotType, index) => ({
-    id: `panel-${Date.now()}-${index}`,
-    shotType,
+    id: `panel-${index}-${crypto.randomUUID()}`, 
+    shotType, 
     imageUrl: `/api/placeholder/640/360?text=${shotType}`,
     caption: '',
     prompt: `${style} style, ${shotType} shot: ${description.slice(0, 100)}...`,
     order: index,
-  }))
+  }));
 }
 
 export const useStoryboardStore = create<StoryboardState>((set, get) => ({
@@ -100,11 +106,17 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
     
     set({ appState: 'loading' })
     
-    // Simulate AI generation delay
-    await new Promise(resolve => setTimeout(resolve, 3000))
-    
-    const panels = generateMockPanels(sceneDescription, style, panelCount)
-    set({ appState: 'generated', panels })
+    // Generate Story Panels
+    try {
+      const panels = await generatePanels(sceneDescription, style, panelCount);
+      console.log("Panels generated:", panels);
+  
+      set({ appState: 'generated', panels });
+    } catch (error) {
+      console.error("An Unexpected Error Occured:", error)
+      
+      set({ appState: 'empty' })
+    }
   },
   
   selectPanel: (id) => set({ selectedPanelId: id, isDrawerOpen: true }),

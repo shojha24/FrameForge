@@ -26,7 +26,7 @@ class StoryboardGenerationRequest(BaseModel):
     """
     scene_prompt: str
     visual_style: str = "None"
-    ip_adapter_image: Base64Str
+    ip_adapter_image: Base64Str = ""
     num_panels: int
 
     @field_validator('scene_prompt')
