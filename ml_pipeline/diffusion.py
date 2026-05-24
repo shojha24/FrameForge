@@ -44,7 +44,7 @@ NEGATIVE_PROMPT = "text, watermark, extra limbs, blurry, low quality, deformed, 
 # - guidance_scale = 7.5 (confirmed good across all test runs)
 controlnet_conditioning_scale = 0.6
 ip_adapter_scale = 0.4  # Can be overridden per-panel via panel_json["ip_adapter_scale"]
-num_inference_steps = 10
+num_inference_steps = 20
 guidance_scale = 7.5
 
 
@@ -78,7 +78,7 @@ def initialize_pipeline():
     
     # Load SDXL pipeline with ControlNet
     pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
-        "stabilityai/stable-diffusion-xl-base-1.0",
+        "RunDiffusion/Juggernaut-XL-v9",
         controlnet=controlnet,
         torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
         use_safetensors=True,
@@ -109,20 +109,25 @@ def initialize_pipeline():
 
 def build_sdxl_prompt(panel_json: dict) -> str:
     """
-    Convert panel JSON → cinematic SDXL prompt string.
+    Convert panel JSON → cinematic SDXL prompt string (optimized for CLIP 77-token limit).
     
-    Translates:
-      - shot_type (ECU, CU, MS, WS, etc.) → photographic framing
-      - camera_angle (Low/High/Eye) → compositional directionality
-      - lighting_mood → quality, direction, color temperature
-      - background → environment and texture
-      - characters → spatial description
+    CRITICAL: CLIP tokenizer truncates at 77 tokens. Order matters!
+    Put most important visual info FIRST so it survives truncation.
+    
+    Priority order:
+    1. Shot type + camera angle (essential framing)
+    2. Lighting (mood/atmosphere)
+    3. Background (setting)
+    4. Characters + positions
+    5. Action (narrative momentum)
+    6. Continuity context (nice-to-have, gets cut if over limit)
+    7. Style (usually cut, but included for safety)
     
     Args:
         panel_json (dict): Panel metadata with all fields
     
     Returns:
-        str: Cinematic, specific prompt ready for SDXL
+        str: Prompt optimized to fit CLIP's 77-token limit
     """
     # Check for custom prompt override (from user regeneration)
     if "_override_prompt" in panel_json:
@@ -130,63 +135,155 @@ def build_sdxl_prompt(panel_json: dict) -> str:
     
     parts = []
     
-    # Shot type in photographic terminology
+    # FIRST: Shot type (most important for framing) - keep concise
     shot_type = panel_json.get("shot_type", "").upper()
     shot_desc = {
-        "ECU": "extreme close-up, face filling the frame",
-        "CU": "close-up, head and shoulders",
-        "MS": "medium shot, from waist up",
-        "WS": "wide shot, full body and environment",
-        "ELS": "establishing shot, expansive wide view",
-        "OTS": "over-the-shoulder shot",
-        "POV": "point of view shot, first-person perspective",
+        "ECU": "extreme close-up",
+        "CU": "close-up",
+        "MS": "medium shot",
+        "WS": "wide shot",
+        "ELS": "establishing shot",
+        "OTS": "over-the-shoulder",
+        "POV": "point of view",
     }.get(shot_type, f"{shot_type} shot")
     parts.append(shot_desc)
     
-    # Camera angle movement
+    # Camera angle (visual composition)
     camera_angle = panel_json.get("camera_angle", "").lower()
     if "low" in camera_angle:
-        parts.append("low angle, looking upward, dramatic")
+        parts.append("low angle")
     elif "high" in camera_angle:
-        parts.append("high angle, looking downward")
+        parts.append("high angle")
     elif "bird" in camera_angle:
-        parts.append("bird's-eye view, overhead angle")
+        parts.append("bird's-eye view")
     elif "worm" in camera_angle:
-        parts.append("worm's-eye view, extreme low angle")
+        parts.append("worm's-eye view")
     elif "dutch" in camera_angle:
-        parts.append("dutch angle, tilted composition")
+        parts.append("dutch angle")
     
-    # Lighting and mood (specific, not vague)
+    # SECOND: Lighting (mood is crucial for diffusion)
     lighting = panel_json.get("lighting_mood", "")
     if lighting and lighting.lower() != "none":
-        parts.append(f"lighting: {lighting}")
+        parts.append(f"{lighting} lighting")
     
-    # Background and environment
+    # THIRD: Background (environmental context)
     background = panel_json.get("background", "")
     if background and background.lower() != "none":
-        parts.append(f"background: {background}")
+        # Shorten if too long
+        bg_text = background[:50] if len(background) > 50 else background
+        parts.append(bg_text)
     
-    # Characters and positioning
+    # FOURTH: Characters and positioning (who's in frame)
     characters = panel_json.get("characters", [])
-    for char in characters:
-        if isinstance(char, dict):
-            name = char.get("name", "character")
-            position = char.get("position", "center")
-            parts.append(f"{name} in {position}")
+    if characters:
+        char_descriptions = []
+        for char in characters:
+            if isinstance(char, dict):
+                name = char.get("name", "character")
+                position = char.get("position", "center")
+                char_descriptions.append(f"{name} {position}")
+        if char_descriptions:
+            parts.append(", ".join(char_descriptions))
     
-    # Action and visual atmosphere
+    # FIFTH: Action/narrative (what's happening)
     action_note = panel_json.get("action_note", "")
     if action_note and action_note.lower() != "none":
-        parts.append(action_note)
+        # Shorten if too long
+        action_text = action_note[:40] if len(action_note) > 40 else action_note
+        parts.append(action_text)
 
+    # SIXTH: Continuity context (might get truncated, but helps when it fits)
+    prev_context = panel_json.get("_previous_context", "")
+    if prev_context:
+        # Make context ultra-concise to maximize chance of fitting
+        parts.append(f"[prev: {prev_context[:30]}]")
     
-    # At the end of build_sdxl_prompt(), replace the hardcoded suffix
-    style = panel_json.get("visual_style", "cinematic storyboard panel, highly detailed, professional lighting")
-    parts.append(f'in the style of "{style}"')
+    # SEVENTH: Style (least important, likely to be truncated)
+    style = panel_json.get("visual_style", "cinematic, professional lighting")
+    parts.append(f'"{style}"')
 
     prompt = ", ".join(parts)
     
     return prompt
+
+
+def extract_panel_context(panel_json: dict) -> str:
+    """
+    Extract key visual and narrative elements from a panel for use in the next panel's prompt.
+    Creates continuity context by capturing environment, lighting, and character states.
+    
+    Args:
+        panel_json (dict): Panel metadata
+    
+    Returns:
+        str: Normalized context string for next panel's prompt
+    """
+    context_elements = []
+    
+    # Capture setting/environment for visual consistency
+    background = panel_json.get("background", "")
+    if background and background.lower() != "none":
+        context_elements.append(f"environment: {background}")
+    
+    # Capture lighting continuity
+    lighting = panel_json.get("lighting_mood", "")
+    if lighting and lighting.lower() != "none":
+        context_elements.append(f"lighting: {lighting}")
+    
+    # Capture character states and positions
+    characters = panel_json.get("characters", [])
+    if characters:
+        char_context = []
+        for char in characters:
+            if isinstance(char, dict):
+                name = char.get("name", "character")
+                position = char.get("position", "center")
+                char_context.append(f"{name} at {position}")
+        if char_context:
+            context_elements.append(f"characters: {', '.join(char_context)}")
+    
+    # Capture action momentum for scene flow
+    action_note = panel_json.get("action_note", "")
+    if action_note and action_note.lower() != "none":
+        context_elements.append(f"action: {action_note[:50]}")
+    
+    # Capture overall mood/tone
+    caption = panel_json.get("caption", "")
+    if caption:
+        context_elements.append(f"scene beat: {caption[:40]}")
+    
+    return "; ".join(context_elements)
+
+
+
+def build_panel_sequence_context(panel_jsons: list[dict]) -> list[dict]:
+    """
+    Enrich panel JSONs with previous/next panel context for better continuity.
+    Modifies panels in-place to include _previous_context and _next_panel_idx fields.
+    
+    Args:
+        panel_jsons (list[dict]): List of panel metadata dicts
+    
+    Returns:
+        list[dict]: Same list, modified with context fields
+    """
+    for idx, panel in enumerate(panel_jsons):
+        # Add reference to next panel index for continuity planning
+        panel["_panel_index"] = idx
+        panel["_total_panels"] = len(panel_jsons)
+        
+        # Add previous panel context if not the first panel
+        if idx > 0:
+            prev_panel = panel_jsons[idx - 1]
+            prev_context = extract_panel_context(prev_panel)
+            panel["_previous_context"] = prev_context
+        
+        # Add reference to next panel for lookahead (optional)
+        if idx < len(panel_jsons) - 1:
+            panel["_next_panel_idx"] = idx + 1
+    
+    return panel_jsons
+
 
 
 def generate_panels(
@@ -243,6 +340,10 @@ def generate_panels(
     else:
         print(f"[Diffusion] IP-Adapter not loaded; skipping")
         ip_adapter_image = None  # Force None so gen_kwargs never includes it
+    
+    # Build panel sequence context for better continuity
+    print(f"\n[Continuity] Building panel context for seamless transitions...")
+    panel_jsons = build_panel_sequence_context(panel_jsons)
     
     generated_panels = []
     

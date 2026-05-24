@@ -29,9 +29,9 @@ async function generatePanels(
   const data = await response.json()
   
   // Map backend response to StoryboardPanel format
-  return (data.panel_jsons || []).map((panel: any, idx: number) => ({
+  return (data.panels || []).map((panel: any, idx: number) => ({
     id: `panel-${idx}`,
-    shotType: panel.shot_type || 'MS',
+    shotType: panel.shotType || panel.shot_type || 'MS',
     imageUrl: data.generated_images?.[idx] 
       ? `data:image/png;base64,${data.generated_images[idx]}` 
       : '',

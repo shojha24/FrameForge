@@ -104,12 +104,20 @@ export function PanelEditorDrawer() {
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-[20px] flex flex-col gap-[30px]">
           {/* Large Image Preview */}
-          <div className="relative aspect-video w-full border-2 border-[#000000] overflow-hidden skeleton-block">
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-[80px] h-[80px] border-2 border-[#808080] flex items-center justify-center">
-                <span className="text-[32px] font-bold text-[#808080] font-mono">{panelIndex + 1}</span>
+          <div className="relative aspect-video w-full border-2 border-[#000000] overflow-hidden bg-[#D0D0D0]">
+            {selectedPanel.imageUrl ? (
+              <img
+                src={selectedPanel.imageUrl}
+                alt={`Panel ${panelIndex + 1}`}
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            ) : (
+              <div className="absolute inset-0 skeleton-block flex items-center justify-center">
+                <div className="w-[80px] h-[80px] border-2 border-[#808080] flex items-center justify-center">
+                  <span className="text-[32px] font-bold text-[#808080] font-mono">{panelIndex + 1}</span>
+                </div>
               </div>
-            </div>
+            )}
             {/* Shot type badge */}
             <div 
               className="
