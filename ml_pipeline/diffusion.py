@@ -32,8 +32,9 @@ from settings import HUGGING_FACE_HUB_TOKEN
 
 pipe = None
 device = None
-W = 1024
-H = 1024
+ip_adapter_loaded = False  # ADD THIS
+W = 640
+H = 384
 NEGATIVE_PROMPT = "text, watermark, extra limbs, blurry, low quality, deformed, disconnected limbs, floating limbs, disfigured, poorly drawn"
 
 # Tuned from FrameForge team stress tests:
@@ -43,7 +44,7 @@ NEGATIVE_PROMPT = "text, watermark, extra limbs, blurry, low quality, deformed, 
 # - guidance_scale = 7.5 (confirmed good across all test runs)
 controlnet_conditioning_scale = 0.6
 ip_adapter_scale = 0.4  # Can be overridden per-panel via panel_json["ip_adapter_scale"]
-num_inference_steps = 25
+num_inference_steps = 10
 guidance_scale = 7.5
 
 
@@ -53,7 +54,7 @@ def initialize_pipeline():
     
     Called once at startup. Loads models and moves to appropriate device.
     """
-    global pipe, device
+    global pipe, device, ip_adapter_loaded
     
     # Device selection
     if torch.cuda.is_available():
@@ -83,15 +84,25 @@ def initialize_pipeline():
         use_safetensors=True,
         variant="fp16" if torch.cuda.is_available() else None
     )
-    pipe = pipe.to(device)
+    pipe.enable_vae_slicing()    # splits VAE decode into slices
+    pipe.enable_vae_tiling()     # tiles large images
+    pipe.enable_attention_slicing(1)
+    pipe.enable_model_cpu_offload()
     
     # Load IP-Adapter
     try:
         print("[Diffusion] Loading IP-Adapter...")
-        from diffusers.models import IPAdapterXL
-        pipe.load_ip_adapter("tencent-ailab/IP-Adapter", subfolder="models", weight_name="ip-adapter_sdxl.bin")
+        pipe.load_ip_adapter(
+            "h94/IP-Adapter",
+            subfolder="sdxl_models",
+            weight_name="ip-adapter_sdxl.bin"
+        )
+        ip_adapter_loaded = True
+        print("[Diffusion] IP-Adapter loaded successfully")
     except Exception as e:
+        ip_adapter_loaded = False
         print(f"[Diffusion] Warning: IP-Adapter not available: {e}")
+
     
     print("[Diffusion] Pipeline initialized!")
 
@@ -167,10 +178,13 @@ def build_sdxl_prompt(panel_json: dict) -> str:
     action_note = panel_json.get("action_note", "")
     if action_note and action_note.lower() != "none":
         parts.append(action_note)
+
     
-    # Combine and finalize
-    prompt = ", ".join(p.strip() for p in parts if p and p.strip())
-    prompt += ", cinematic storyboard panel, highly detailed, professional lighting, vibrant colors"
+    # At the end of build_sdxl_prompt(), replace the hardcoded suffix
+    style = panel_json.get("visual_style", "cinematic storyboard panel, highly detailed, professional lighting")
+    parts.append(f'in the style of "{style}"')
+
+    prompt = ", ".join(parts)
     
     return prompt
 
@@ -213,21 +227,22 @@ def generate_panels(
     
     # Set IP-Adapter scale
     default_ip_scale = ip_adapter_scale
-    if ip_adapter_image is not None:
-        ip_adapter_image = ip_adapter_image.convert("RGB").resize((224, 224))
-        try:
-            pipe.set_ip_adapter_scale(default_ip_scale)
-            print(f"[Diffusion] IP-Adapter initialized with scale={default_ip_scale}")
-        except Exception as e:
-            print(f"[Diffusion] Warning: Could not set IP-Adapter scale: {e}")
-    else:
-        # Create dummy black image
-        ip_adapter_image = Image.new("RGB", (224, 224), color=(0, 0, 0))
-        try:
-            pipe.set_ip_adapter_scale(0.0)
+
+    # Set IP-Adapter scale — only if adapter actually loaded
+    if ip_adapter_loaded:
+        if ip_adapter_image is not None:
+            ip_adapter_image = ip_adapter_image.convert("RGB").resize((224, 224))
+            try:
+                pipe.set_ip_adapter_scale(default_ip_scale)
+                print(f"[Diffusion] IP-Adapter initialized with scale={default_ip_scale}")
+            except Exception as e:
+                print(f"[Diffusion] Warning: Could not set IP-Adapter scale: {e}")
+        else:
             print(f"[Diffusion] No character reference provided; IP-Adapter disabled")
-        except Exception:
-            pass
+            ip_adapter_image = None  # Don't pass it at all
+    else:
+        print(f"[Diffusion] IP-Adapter not loaded; skipping")
+        ip_adapter_image = None  # Force None so gen_kwargs never includes it
     
     generated_panels = []
     
@@ -264,13 +279,19 @@ def generate_panels(
                 pose_query=pose_query,
                 position_keyword=position,
                 camera_angle=camera_angle,
-                canvas_size=H if H == W else 1024,
+                canvas_width=W,
+                canvas_height=H,
                 hf_token=hf_token
             )
             
-            # Resize conditioning to match generation size
-            conditioning_map = conditioning_map.resize((W, H), Image.Resampling.LANCZOS)
-            print(f"  Conditioning map ready: {conditioning_map.size}")
+            # Handle case where pose conditioning failed (graceful fallback)
+            if conditioning_map is not None:
+                # Resize conditioning to match generation size
+                conditioning_map = conditioning_map.resize((W, H), Image.Resampling.LANCZOS)
+                print(f"  Conditioning map ready: {conditioning_map.size}")
+            else:
+                print(f"  [Fallback] Generating without pose conditioning")
+                conditioning_map = None
             
             # Per-panel IP-Adapter scale (can be overridden in panel JSON)
             panel_ip_scale = panel_json.get("ip_adapter_scale", default_ip_scale)
@@ -289,18 +310,25 @@ def generate_panels(
             t0 = time.time()
             print(f"\n[Generation] Starting inference...")
             try:
-                result = pipe(
-                    prompt=prompt,
-                    negative_prompt=NEGATIVE_PROMPT,
-                    image=conditioning_map,
-                    ip_adapter_image=ip_adapter_image,
-                    controlnet_conditioning_scale=controlnet_conditioning_scale,
-                    num_inference_steps=num_inference_steps,
-                    guidance_scale=guidance_scale,
-                    height=H,
-                    width=W,
-                    generator=torch.Generator(device=device).manual_seed(42 + idx),
-                )
+                # Build kwargs, conditionally including conditioning_map
+                gen_kwargs = {
+                    "prompt": prompt,
+                    "negative_prompt": NEGATIVE_PROMPT,
+                    "controlnet_conditioning_scale": controlnet_conditioning_scale,
+                    "num_inference_steps": num_inference_steps,
+                    "guidance_scale": guidance_scale,
+                    "height": H,
+                    "width": W,
+                    "generator": torch.Generator(device=device).manual_seed(42 + idx),
+                }
+                if conditioning_map is not None:
+                    gen_kwargs["image"] = conditioning_map
+
+                # Only pass ip_adapter_image if adapter is loaded AND we have a reference
+                if ip_adapter_loaded and ip_adapter_image is not None:
+                    gen_kwargs["ip_adapter_image"] = ip_adapter_image
+                
+                result = pipe(**gen_kwargs)
                 img = result.images[0]
                 elapsed = time.time() - t0
                 print(f"[Generation] ✅ Success in {elapsed:.2f}s")
@@ -312,18 +340,22 @@ def generate_panels(
                     print(f"[Generation] ⚠️  OOM error detected")
                     print(f"[Generation] Retrying at lower resolution (512×384)...")
                     
-                    result = pipe(
-                        prompt=prompt,
-                        negative_prompt=NEGATIVE_PROMPT,
-                        image=conditioning_map.resize((512, 384), Image.Resampling.LANCZOS),
-                        ip_adapter_image=ip_adapter_image,
-                        controlnet_conditioning_scale=controlnet_conditioning_scale,
-                        num_inference_steps=20,  # Fewer steps at lower res
-                        guidance_scale=guidance_scale,
-                        height=384,
-                        width=512,
-                        generator=torch.Generator(device=device).manual_seed(42 + idx),
-                    )
+                    retry_kwargs = {
+                        "prompt": prompt,
+                        "negative_prompt": NEGATIVE_PROMPT,
+                        "controlnet_conditioning_scale": controlnet_conditioning_scale,
+                        "num_inference_steps": 10,
+                        "guidance_scale": guidance_scale,
+                        "height": 384,
+                        "width": 512,
+                        "generator": torch.Generator(device=device).manual_seed(42 + idx),
+                    }
+                    if conditioning_map is not None:
+                        retry_kwargs["image"] = conditioning_map.resize((512, 384), Image.Resampling.LANCZOS)
+                    if ip_adapter_loaded and ip_adapter_image is not None:
+                        retry_kwargs["ip_adapter_image"] = ip_adapter_image
+                    
+                    result = pipe(**retry_kwargs)
                     img = result.images[0]
                     img = img.resize((W, H), Image.Resampling.LANCZOS)
                     elapsed = time.time() - t0

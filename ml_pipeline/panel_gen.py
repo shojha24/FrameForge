@@ -15,13 +15,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 from settings import OPEN_ROUTER_API_KEY, SYSTEM_PROMPT
 
 
-async def decompose_scene(scene_prompt: str, num_panels: int) -> list[dict]:
+async def decompose_scene(scene_prompt: str, num_panels: int, visual_style: str) -> list[dict]:
     """
     Call OpenRouter LLM to decompose scene into panel JSON array.
     
     Args:
         scene_prompt (str): Plain English scene description
         num_panels (int): Number of panels to generate
+        visual_style (str): Visual style for generation
     
     Returns:
         list[dict]: Array of panel objects with fields:
@@ -32,7 +33,7 @@ async def decompose_scene(scene_prompt: str, num_panels: int) -> list[dict]:
         Exception: If LLM returns invalid JSON or API call fails
     """
     async with httpx.AsyncClient() as client:
-        user_prompt = f"Panel Count: {num_panels} Scene Description: {scene_prompt}"
+        user_prompt = f"Panel Count: {num_panels} Scene Description: {scene_prompt} Visual Style: {visual_style}"
         
         print(f"\n{'='*80}")
         print(f"[LLM Decomposer] Scene Decomposition Request")

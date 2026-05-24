@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.settings import PROJECT_NAME, ORIGINS
 from backend.api import router
-from ml_pipeline import diffusion
+from ml_pipeline import diffusion, pose_search
 
 app = FastAPI(title=PROJECT_NAME)
 
@@ -19,6 +19,8 @@ app = FastAPI(title=PROJECT_NAME)
 async def startup():
     print("[Startup] Initializing diffusion pipeline...")
     diffusion.initialize_pipeline()
+    print("[Startup] Initializing pose search...")
+    pose_search.initialize()
     print("[Startup] ✅ Pipeline ready!")
 
 app.add_middleware(

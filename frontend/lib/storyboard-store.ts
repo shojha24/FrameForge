@@ -5,12 +5,16 @@ const API_BASE = 'http://127.0.0.1:8000/frame-forge/api'
 async function generatePanels(
   sceneDescription: string,
   style: string,
-  panelCount: number
+  panelCount: number,
+  characterImage: File | null   // add this
 ): Promise<StoryboardPanel[]> {
   const formData = new FormData()
   formData.append('scene_prompt', sceneDescription)
   formData.append('num_panels', panelCount.toString())
   formData.append('visual_style', style || 'cinematic, photorealistic')
+  if (characterImage) {
+    formData.append('character_reference', characterImage)  // add this
+  }
 
   const response = await fetch(`${API_BASE}/generate`, {
     method: 'POST',
@@ -28,7 +32,9 @@ async function generatePanels(
   return (data.panel_jsons || []).map((panel: any, idx: number) => ({
     id: `panel-${idx}`,
     shotType: panel.shot_type || 'MS',
-    imageUrl: data.generated_images?.[idx] || '',
+    imageUrl: data.generated_images?.[idx] 
+      ? `data:image/png;base64,${data.generated_images[idx]}` 
+      : '',
     caption: panel.caption || '',
     prompt: data.sdxl_prompts?.[idx] || '',
     order: idx,
@@ -136,14 +142,14 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
   setPanelCount: (count) => set({ panelCount: count }),
   
   generateStoryboard: async () => {
-    const { sceneDescription, style, panelCount } = get()
+    const { sceneDescription, style, panelCount, characterImage } = get()
     if (!sceneDescription.trim()) return
     
     set({ appState: 'loading' })
     
     // Generate Story Panels
     try {
-      const panels = await generatePanels(sceneDescription, style, panelCount);
+      const panels = await generatePanels(sceneDescription, style, panelCount, characterImage);
       console.log("Panels generated:", panels);
   
       set({ appState: 'generated', panels });

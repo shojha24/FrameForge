@@ -65,7 +65,7 @@ async def generate_storyboard(
     scene_prompt: str = Form(...),
     num_panels: int = Form(default=5),
     visual_style: str = Form(default="cinematic, photorealistic"),
-    character_image: UploadFile = File(None)
+    character_reference: UploadFile = File(None)
 ):
     """
     Generate a complete storyboard from scene description.
@@ -80,19 +80,15 @@ async def generate_storyboard(
         dict: Contains panels, generated_images (base64), sdxl_prompts
     """
     try:
-        print(f"[API] /generate: {num_panels} panels for scene: {scene_prompt[:60]}...")
-        
-        # Decode character image if provided
         ip_image_data = None
-        if character_image:
+        if character_reference:
             try:
-                image_bytes = await character_image.read()
-                # Validate it's an image
+                image_bytes = await character_reference.read()  # read once
+                # Validate by opening — don't call verify()
                 img = Image.open(io.BytesIO(image_bytes))
-                img.verify()
-                # Re-read for encoding
-                img_bytes = await character_image.read()
-                ip_image_data = base64.b64encode(img_bytes).decode("utf-8")
+                img.load()  # actually loads pixels, safe validation
+                # Encode the bytes we already have
+                ip_image_data = base64.b64encode(image_bytes).decode("utf-8")
                 print(f"[API] Character reference image loaded: {len(image_bytes)} bytes")
             except Exception as e:
                 print(f"[API] WARNING: Invalid character image: {e}")
@@ -100,12 +96,14 @@ async def generate_storyboard(
                     status_code=400,
                     content={"detail": f"Character image is invalid: {e}"}
                 )
+
         
         # Call pipeline
         result = await pipeline.run_full_generation(
             scene_prompt=scene_prompt,
             num_panels=num_panels,
             ip_image_data=ip_image_data,
+            visual_style=visual_style,
             hf_token=HUGGING_FACE_HUB_TOKEN
         )
         

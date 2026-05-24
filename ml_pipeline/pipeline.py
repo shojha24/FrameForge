@@ -22,6 +22,7 @@ from backend.settings import HUGGING_FACE_HUB_TOKEN
 async def run_full_generation(
     scene_prompt: str,
     num_panels: int,
+    visual_style: str,
     ip_image_data: str = None,
     hf_token: str = None
 ) -> dict:
@@ -38,6 +39,7 @@ async def run_full_generation(
         scene_prompt (str): Raw scene description
         num_panels (int): Number of panels
         ip_image_data (str, optional): Base64 character reference image
+        visual_style (str): Visual style for generation
         hf_token (str, optional): HuggingFace token
     
     Returns:
@@ -55,8 +57,10 @@ async def run_full_generation(
     
     # Step 1: Decompose scene into panels
     try:
-        panel_jsons = await panel_gen.decompose_scene(scene_prompt, num_panels)
+        panel_jsons = await panel_gen.decompose_scene(scene_prompt, num_panels, visual_style)
         print(f"\n[Pipeline] ✅ LLM generated {len(panel_jsons)} panels")
+        for panel in panel_jsons:
+            panel["visual_style"] = visual_style
     except Exception as e:
         print(f"\n[Pipeline] ❌ ERROR: LLM decomposition failed: {e}")
         raise
@@ -96,11 +100,23 @@ async def run_full_generation(
     # Step 5: Convert images to base64 for API response
     print(f"\n[Pipeline] Encoding images to base64...")
     generated_images_b64 = []
-    for img in generated_images:
+
+    # Save to disk for debugging
+    debug_dir = os.path.join(project_root, "debug_output")
+    os.makedirs(debug_dir, exist_ok=True)
+
+    for idx, img in enumerate(generated_images):
+        # Save to disk
+        save_path = os.path.join(debug_dir, f"panel_{idx+1}.png")
+        img.save(save_path)
+        print(f"[Pipeline] 💾 Saved panel {idx+1} to {save_path}")
+        
+        # Encode to base64
         buffered = io.BytesIO()
         img.save(buffered, format="PNG")
         img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
         generated_images_b64.append(img_base64)
+
     print(f"[Pipeline] ✅ Encoded {len(generated_images_b64)} images")
     
     print(f"\n{'='*80}")

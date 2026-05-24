@@ -106,7 +106,8 @@ def _place_on_canvas(
     sprite: Image.Image,
     position_keyword: str,
     camera_angle: str,
-    canvas_size: int = 1024
+    canvas_width: int = 640,
+    canvas_height: int = 384
 ) -> Image.Image:
     """
     Composite the scaled skeleton sprite onto a canvas at the correct position.
@@ -119,12 +120,13 @@ def _place_on_canvas(
         sprite: Scaled skeleton sprite
         position_keyword: e.g., "left foreground", "center midground"
         camera_angle: e.g., "Eye Level", "Low Angle", "High Angle"
-        canvas_size: Output canvas size (default 1024)
+        canvas_width: Output canvas width (default 640)
+        canvas_height: Output canvas height (default 384)
     
     Returns:
         Canvas PIL Image with sprite composited
     """
-    canvas = Image.new("RGB", (canvas_size, canvas_size), color=(0, 0, 0))
+    canvas = Image.new("RGB", (canvas_width, canvas_height), color=(0, 0, 0))
     
     # Determine horizontal position
     position_lower = position_keyword.lower()
@@ -155,12 +157,12 @@ def _place_on_canvas(
     y_center += y_shift
     
     # Calculate pixel positions (center of sprite at x_center, y_center)
-    x_pixel = int(x_center * canvas_size - sprite.width // 2)
-    y_pixel = int(y_center * canvas_size - sprite.height // 2)
+    x_pixel = int(x_center * canvas_width - sprite.width // 2)
+    y_pixel = int(y_center * canvas_height - sprite.height // 2)
     
     # Clamp to canvas bounds
-    x_pixel = max(0, min(x_pixel, canvas_size - sprite.width))
-    y_pixel = max(0, min(y_pixel, canvas_size - sprite.height))
+    x_pixel = max(0, min(x_pixel, canvas_width - sprite.width))
+    y_pixel = max(0, min(y_pixel, canvas_height - sprite.height))
     
     # Composite
     canvas.paste(sprite, (x_pixel, y_pixel))
@@ -171,7 +173,8 @@ def build_pose_map(
     pose_img: Image.Image,
     position_keyword: str,
     camera_angle: str,
-    canvas_size: int = 1024
+    canvas_width: int = 640,
+    canvas_height: int = 384
 ) -> Image.Image:
     """
     Run the full 4-step preprocessing pipeline on a skeleton image.
@@ -186,7 +189,8 @@ def build_pose_map(
         pose_img: Input OpenPose skeleton image
         position_keyword: e.g., "left foreground", "center midground"
         camera_angle: e.g., "Eye Level", "Low Angle", "High Angle"
-        canvas_size: Output canvas size (default 1024)
+        canvas_width: Output canvas width (default 640)
+        canvas_height: Output canvas height (default 384)
     
     Returns:
         Final canvas PIL Image ready for ControlNet-OpenPose conditioning
@@ -201,7 +205,7 @@ def build_pose_map(
     scaled = _scale_by_depth(squared, position_keyword)
     
     # Step 4: Place on canvas
-    canvas = _place_on_canvas(scaled, position_keyword, camera_angle, canvas_size)
+    canvas = _place_on_canvas(scaled, position_keyword, camera_angle, canvas_width=canvas_width, canvas_height=canvas_height)
     
     return canvas
 
@@ -210,7 +214,8 @@ def get_conditioning_map(
     pose_query: str,
     position_keyword: str,
     camera_angle: str,
-    canvas_size: int = 1024,
+    canvas_width: int = 640,
+    canvas_height: int = 384,
     hf_token: str = None
 ) -> Image.Image:
     """
@@ -222,16 +227,21 @@ def get_conditioning_map(
         pose_query: Naturalistic description of pose
         position_keyword: Spatial position on canvas
         camera_angle: Camera angle for vertical adjustment
-        canvas_size: Output canvas size (default 1024)
+        canvas_width: Output canvas width (default 640)
+        canvas_height: Output canvas height (default 384)
         hf_token: HuggingFace token (required on first run)
     
     Returns:
         Final conditioning canvas ready for ControlNet-OpenPose
     """
     # Stage 1: Retrieve skeleton image via semantic search
-    skeleton_img = pose_search.retrieve_pose(pose_query, top_k=1, hf_token=hf_token)
+    try:
+        skeleton_img = pose_search.retrieve_pose(pose_query, top_k=1, hf_token=hf_token)
+    except Exception as e:
+        print(f"[Warning] Pose search failed: {e}. Skipping pose conditioning.")
+        return None
     
     # Stage 2: Preprocess
-    conditioning_map = build_pose_map(skeleton_img, position_keyword, camera_angle, canvas_size)
+    conditioning_map = build_pose_map(skeleton_img, position_keyword, camera_angle, canvas_width=canvas_width, canvas_height=canvas_height)
     
     return conditioning_map
