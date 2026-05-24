@@ -1,5 +1,40 @@
 import { create } from 'zustand'
 
+const API_BASE = 'http://127.0.0.1:8000/frame-forge/api'
+
+async function generatePanels(
+  sceneDescription: string,
+  style: string,
+  panelCount: number
+): Promise<StoryboardPanel[]> {
+  const formData = new FormData()
+  formData.append('scene_prompt', sceneDescription)
+  formData.append('num_panels', panelCount.toString())
+  formData.append('visual_style', style || 'cinematic, photorealistic')
+
+  const response = await fetch(`${API_BASE}/generate`, {
+    method: 'POST',
+    body: formData,
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error(`API error: ${response.statusText} - ${JSON.stringify(error.detail || error)}`)
+  }
+  
+  const data = await response.json()
+  
+  // Map backend response to StoryboardPanel format
+  return (data.panel_jsons || []).map((panel: any, idx: number) => ({
+    id: `panel-${idx}`,
+    shotType: panel.shot_type || 'MS',
+    imageUrl: data.generated_images?.[idx] || '',
+    caption: panel.caption || '',
+    prompt: data.sdxl_prompts?.[idx] || '',
+    order: idx,
+  }))
+}
+
 export type ShotType = 'ECU' | 'CU' | 'MS' | 'WS' | 'ELS' | 'OTS' | 'POV'
 
 // Style is now a string to support the extensive style library

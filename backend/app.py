@@ -1,10 +1,25 @@
+import sys
+import os
+
+# Add project root to path so ml_pipeline imports work
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
+
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 
-from settings import PROJECT_NAME, ORIGINS
-from api import router
+from backend.settings import PROJECT_NAME, ORIGINS
+from backend.api import router
+from ml_pipeline import diffusion
 
 app = FastAPI(title=PROJECT_NAME)
+
+# Initialize diffusion pipeline at startup
+@app.on_event("startup")
+async def startup():
+    print("[Startup] Initializing diffusion pipeline...")
+    diffusion.initialize_pipeline()
+    print("[Startup] ✅ Pipeline ready!")
 
 app.add_middleware(
     CORSMiddleware,
