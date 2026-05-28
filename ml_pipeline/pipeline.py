@@ -19,6 +19,21 @@ from ml_pipeline import panel_gen, diffusion
 from backend.settings import HUGGING_FACE_HUB_TOKEN
 
 
+def _extract_scene_bible(panel_jsons: list[dict], scene_prompt: str) -> str:
+    # Pull consistent elements from first panel as the visual anchor
+    # No extra LLM call needed — the panels themselves contain this info
+    if not panel_jsons:
+        return ""
+    first = panel_jsons[0]
+    characters = first.get("characters", [])
+    char_name = characters[0].get("name", "") if characters else ""
+    return (
+        f"protagonist: {char_name}, "
+        f"setting: {first.get('background', '')}, "
+        f"tone: {first.get('lighting_mood', '')} lighting"
+    )
+
+
 async def run_full_generation(
     scene_prompt: str,
     num_panels: int,
@@ -79,10 +94,15 @@ async def run_full_generation(
     # Step 3: Generate images
     try:
         print(f"\n[Pipeline] Starting image generation for {len(panel_jsons)} panels...")
-        generated_images = diffusion.generate_panels(
+        # In run_full_generation(), after decompose_scene():
+        scene_bible = _extract_scene_bible(panel_jsons, scene_prompt)
+
+        # Update the diffusion call:
+        generated_images = await diffusion.generate_panels(
             panel_jsons,
             ip_adapter_image=ip_image,
-            hf_token=hf_token
+            hf_token=hf_token,
+            scene_bible=scene_bible      # add this
         )
         print(f"\n[Pipeline] ✅ Generated {len(generated_images)} images")
     except Exception as e:

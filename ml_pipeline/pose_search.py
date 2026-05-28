@@ -63,26 +63,50 @@ def load_pose_index(hf_token: str = None):
     print("[Pose Search] Dataset and index ready!")
     return _dataset, _faiss_index
 
+def _is_valid_skeleton(img: Image.Image, min_fill_ratio: float = 0.02) -> bool:
+    """
+    Reject obviously corrupt/degenerate skeletons.
+    A valid OpenPose skeleton should have a reasonable number of non-black pixels
+    distributed across the image, not just a tiny cluster.
+    """
+    arr = np.array(img.convert("RGB"))
+    nonblack = np.any(arr > 10, axis=2)
+    total_pixels = arr.shape[0] * arr.shape[1]
+    nonblack_ratio = nonblack.sum() / total_pixels
+
+    # Also check that the skeleton spans a reasonable height
+    rows = np.where(nonblack)[0]
+    if len(rows) == 0:
+        return False
+    height_span = (rows.max() - rows.min()) / arr.shape[0]
+
+    return nonblack_ratio >= min_fill_ratio and height_span >= 0.15
+
 
 def retrieve_pose(pose_query: str, top_k: int = 1, hf_token: str = None) -> Image.Image:
     model = build_model(device="cpu")
     dataset, index = load_pose_index(hf_token=hf_token)
 
     query_embedding = model.encode("search_query: " + pose_query)
-    # faiss expects float32, shape (n_queries, dim)
     query_vec = np.array([query_embedding], dtype=np.float32)
 
-    distances, indices = index.search(query_vec, top_k)
+    # Fetch more candidates so we can filter bad ones
+    distances, indices = index.search(query_vec, 20)
 
-    best_idx = indices[0][0]
-    best_score = distances[0][0]
-    best_text = dataset[best_idx]["text"]
-    best_image = dataset[best_idx]["conditioning_image"]
+    for rank, (idx, score) in enumerate(zip(indices[0], distances[0])):
+        candidate_img = dataset[int(idx)]["conditioning_image"]
+        candidate_text = dataset[int(idx)]["text"]
 
-    print(f"[Pose Search] Query: {pose_query[:60]}...")
-    print(f"[Pose Search] Best match (score={best_score:.4f}): {best_text[:80]}...")
+        if _is_valid_skeleton(candidate_img):
+            print(f"[Pose Search] Query: {pose_query[:60]}...")
+            print(f"[Pose Search] Best valid match (rank={rank}, score={score:.4f}): {candidate_text[:80]}...")
+            return candidate_img
+        else:
+            print(f"[Pose Search] Skipping corrupt skeleton at rank={rank}, score={score:.4f}: {candidate_text[:40]}...")
 
-    return best_image
+    # Fallback: return best match anyway
+    print("[Pose Search] Warning: no valid skeleton found in top 20, using best match anyway")
+    return dataset[int(indices[0][0])]["conditioning_image"]
 
 
 def retrieve_top_k_poses(pose_query: str, top_k: int = 5, hf_token: str = None) -> list[Image.Image]:

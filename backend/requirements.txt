@@ -17,3 +17,4 @@ faiss-cpu
 datasets
 einops
 numpy
+fal-client
