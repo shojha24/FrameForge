@@ -120,10 +120,6 @@ async def _generate_single_panel(
 ) -> str:
     prompt, _ = build_flux_prompt(panel_json, style, scene_bible)  # discard negative
 
-    shot_type = panel_json.get("shot_type", "MS")
-    disable_controlnet_shots = {"CU", "ECU"}  # Close-up and Extreme close-up
-    use_controlnet = shot_type not in disable_controlnet_shots
-
     arguments = {
         "prompt": prompt,
         "image_size": {"width": W, "height": H},
@@ -132,10 +128,7 @@ async def _generate_single_panel(
         "seed": 42 + panel_idx,
         "loras": [],
         "controlnets": [],
-    }
-
-    if use_controlnet:
-        arguments["controlnet_unions"] = [
+        "controlnet_unions": [
             {
                 "path": "InstantX/FLUX.1-dev-Controlnet-Union",
                 "controls": [
@@ -147,6 +140,7 @@ async def _generate_single_panel(
                 ],
             }
         ]
+    }
 
     if ip_adapter_url is not None:
         arguments["ip_adapters"] = [
@@ -208,18 +202,17 @@ async def generate_panels(
     for idx, panel in enumerate(panel_jsons):
         pose_query = panel.get("pose_query", "person standing upright facing camera")
         camera_angle = panel.get("camera_angle", "Eye Level")
+        shot_type = panel.get("shot_type", "MS") # <-- Extract shot_type
 
-        # Extract position from characters array (where LLM puts it)
+        # Extract position...
         characters = panel.get("characters", [])
-        position = (
-            characters[0].get("position", "center midground")
-            if characters else "center midground"
-        )
+        position = characters[0].get("position", "center midground") if characters else "center midground"
 
         conditioning_map = build_map.get_conditioning_map(
             pose_query=pose_query,
             position_keyword=position,
             camera_angle=camera_angle,
+            shot_type=shot_type,     # <-- Pass it here
             canvas_width=W,
             canvas_height=H,
             hf_token=hf_token

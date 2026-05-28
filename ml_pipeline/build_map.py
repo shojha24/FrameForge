@@ -69,33 +69,22 @@ def _pad_to_square(img: Image.Image) -> Image.Image:
     return square
 
 
-def _scale_by_depth(img: Image.Image, position_keyword: str) -> Image.Image:
-    """
-    Scale the skeleton sprite based on depth (foreground, midground, background).
-    
-    Scaling factors:
-      foreground: 0.65  (large, close to camera)
-      midground:  0.45  (medium)
-      background: 0.28  (small, far from camera)
-    
-    Args:
-        img: Square PIL Image from pad_to_square()
-        position_keyword: Must contain 'foreground', 'midground', or 'background'
-    
-    Returns:
-        Scaled PIL Image
-    """
+def _scale_by_depth(img: Image.Image, position_keyword: str, shot_type: str) -> Image.Image:
     position_lower = position_keyword.lower()
     
-    if "foreground" in position_lower or "fg" in position_lower:
-        scale = 0.65
-    elif "midground" in position_lower or "mg" in position_lower:
-        scale = 0.45
-    elif "background" in position_lower or "bg" in position_lower:
-        scale = 0.28
-    else:
-        scale = 0.45  # Default to midground
+    if "foreground" in position_lower or "fg" in position_lower: scale = 0.65
+    elif "midground" in position_lower or "mg" in position_lower: scale = 0.45
+    elif "background" in position_lower or "bg" in position_lower: scale = 0.28
+    else: scale = 0.45
     
+    # --- NEW: Shot Type Multipliers ---
+    if shot_type == "ECU":
+        scale *= 3.0  # Massive zoom, only face fits
+    elif shot_type == "CU":
+        scale *= 1.8  # Head and shoulders fit
+    elif shot_type in ["ELS", "WS"]:
+        scale *= 0.8  # Shrink slightly for wide shots
+
     new_w = int(img.width * scale)
     new_h = int(img.height * scale)
     scaled = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
@@ -106,8 +95,9 @@ def _place_on_canvas(
     sprite: Image.Image,
     position_keyword: str,
     camera_angle: str,
-    canvas_width: int = 640,
-    canvas_height: int = 384
+    shot_type: str,            # <-- ADDED
+    canvas_width: int = 1280,  # <-- Match your diffusion.py W/H
+    canvas_height: int = 768
 ) -> Image.Image:
     """
     Composite the scaled skeleton sprite onto a canvas at the correct position.
@@ -156,6 +146,11 @@ def _place_on_canvas(
     
     y_center += y_shift
     
+    # --- NEW: Adjust for massive ECU/CU sprites ---
+    if shot_type in ["ECU", "CU"]:
+        # Push the center point way down so the top of the sprite (the head) stays in view
+        y_center += 0.35 
+    
     # Calculate pixel positions (center of sprite at x_center, y_center)
     x_pixel = int(x_center * canvas_width - sprite.width // 2)
     y_pixel = int(y_center * canvas_height - sprite.height // 2)
@@ -173,8 +168,9 @@ def build_pose_map(
     pose_img: Image.Image,
     position_keyword: str,
     camera_angle: str,
+    shot_type: str,
     canvas_width: int = 640,
-    canvas_height: int = 384
+    canvas_height: int = 384,
 ) -> Image.Image:
     """
     Run the full 4-step preprocessing pipeline on a skeleton image.
@@ -214,6 +210,7 @@ def get_conditioning_map(
     pose_query: str,
     position_keyword: str,
     camera_angle: str,
+    shot_type: str,
     canvas_width: int = 640,
     canvas_height: int = 384,
     hf_token: str = None
