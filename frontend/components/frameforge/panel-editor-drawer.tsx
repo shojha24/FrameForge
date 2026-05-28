@@ -11,7 +11,6 @@ const SHOT_TYPES: { value: ShotType; label: string }[] = [
   { value: 'WS', label: 'WS - Wide shot' },
   { value: 'ELS', label: 'ELS - Extreme long shot' },
   { value: 'OTS', label: 'OTS - Over the shoulder' },
-  { value: 'POV', label: 'POV - Point of view' },
 ]
 
 export function PanelEditorDrawer() {

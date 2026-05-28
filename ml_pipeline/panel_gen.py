@@ -69,6 +69,16 @@ async def decompose_scene(scene_prompt: str, num_panels: int, visual_style: str)
             # Parse JSON
             panel_jsons = json.loads(content)
             print(f"\n[LLM Response] ✅ Successfully parsed {len(panel_jsons)} panels")
+
+            if panel_jsons:
+                protagonist_name = (
+                    panel_jsons[0].get("characters", [{}])[0].get("name", "")
+                )
+                if protagonist_name:
+                    for panel in panel_jsons[1:]:
+                        chars = panel.get("characters", [])
+                        if chars:
+                            chars[0]["name"] = protagonist_name  # overwrite drift
             
             # Log each panel
             print(f"\n[Panels Generated]")

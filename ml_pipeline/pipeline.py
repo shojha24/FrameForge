@@ -109,13 +109,13 @@ async def run_full_generation(
         print(f"\n[Pipeline] ❌ ERROR: Diffusion failed: {e}")
         raise
     
-    # Step 4: Build SDXL prompts for each panel
-    print(f"\n[Pipeline] Building SDXL prompts...")
-    sdxl_prompts = []
+    # Step 4: Build Flux prompts for each panel
+    print(f"\n[Pipeline] Building Flux prompts...")
+    flux_prompts = []
     for idx, panel in enumerate(panel_jsons, 1):
-        prompt = diffusion.build_sdxl_prompt(panel)
-        sdxl_prompts.append(prompt)
-    print(f"[Pipeline] ✅ Built {len(sdxl_prompts)} prompts")
+        prompt, _ = diffusion.build_flux_prompt(panel, visual_style, scene_bible)
+        flux_prompts.append(prompt)
+    print(f"[Pipeline] ✅ Built {len(flux_prompts)} prompts")
     
     # Step 5: Convert images to base64 for API response
     print(f"\n[Pipeline] Encoding images to base64...")
@@ -146,7 +146,7 @@ async def run_full_generation(
     return {
         "panels": panel_jsons,
         "generated_images": generated_images_b64,
-        "sdxl_prompts": sdxl_prompts
+        "sdxl_prompts": flux_prompts
     }
 
 
@@ -204,7 +204,7 @@ async def run_panel_regeneration(
         if custom_prompt:
             panel_to_generate["_override_prompt"] = custom_prompt
         
-        generated_images = diffusion.generate_panels(
+        generated_images = await diffusion.generate_panels(
             [panel_to_generate],
             ip_adapter_image=ip_image,
             hf_token=hf_token

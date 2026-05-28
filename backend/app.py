@@ -17,8 +17,8 @@ app = FastAPI(title=PROJECT_NAME)
 # Initialize diffusion pipeline at startup
 @app.on_event("startup")
 async def startup():
-    print("[Startup] Initializing diffusion pipeline...")
-    diffusion.initialize_pipeline()
+    # print("[Startup] Initializing diffusion pipeline...")
+    # diffusion.initialize_pipeline()
     print("[Startup] Initializing pose search...")
     pose_search.initialize()
     print("[Startup] ✅ Pipeline ready!")

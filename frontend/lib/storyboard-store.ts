@@ -41,6 +41,43 @@ async function generatePanels(
   }))
 }
 
+async function regeneratePanelAPI(
+  panel: StoryboardPanel,
+  customPrompt: string,
+  characterImage: File | null
+): Promise<string> {
+  // Convert panel back to snake_case for backend
+  const panelData = {
+    shotType: panel.shotType,
+    caption: panel.caption,
+    prompt: panel.prompt,
+    // Include any other panel properties
+  }
+  
+  const formData = new FormData()
+  formData.append('panel_json', JSON.stringify(panelData))
+  formData.append('custom_prompt', customPrompt)
+  if (characterImage) {
+    formData.append('character_image', characterImage)
+  }
+
+  const response = await fetch(`${API_BASE}/regenerate`, {
+    method: 'POST',
+    body: formData,
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error(`API error: ${response.statusText} - ${JSON.stringify(error.detail || error)}`)
+  }
+  
+  const data = await response.json()
+  
+  // Extract base64 image from response
+  const imageBase64 = data.generated_image
+  return `data:image/png;base64,${imageBase64}`
+}
+
 export type ShotType = 'ECU' | 'CU' | 'MS' | 'WS' | 'ELS' | 'OTS' | 'POV'
 
 // Style is now a string to support the extensive style library
@@ -177,9 +214,27 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
   })),
   
   regeneratePanel: async (id) => {
-    // Simulate regeneration
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    // In real implementation, this would call the AI service
+    const state = get()
+    const panel = state.panels.find(p => p.id === id)
+    if (!panel) return
+    
+    try {
+      const newImageUrl = await regeneratePanelAPI(
+        panel,
+        panel.prompt,
+        state.characterImage
+      )
+      
+      // Update the panel with the new image
+      set((state) => ({
+        panels: state.panels.map(p => 
+          p.id === id ? { ...p, imageUrl: newImageUrl } : p
+        )
+      }))
+    } catch (error) {
+      console.error('Panel regeneration failed:', error)
+      throw error
+    }
   },
   
   reorderPanels: (startIndex, endIndex) => set((state) => {

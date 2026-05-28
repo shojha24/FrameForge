@@ -33,7 +33,7 @@ You are strictly restricted to using ONLY the following options for these specif
 This pipeline renders exactly one skeleton per panel. You must identify the PRIMARY protagonist and follow them exclusively throughout all panels.
 
 Rules:
-- The `characters` array must ALWAYS contain exactly one object
+- The `characters` array must ALWAYS contain exactly one object (functionally, this means the protagonist must appear in every panel).
 - Secondary characters, crowds, bystanders are described in `background` only
 - If scene mentions multiple named characters, pick the one driving the action
 - Never put more than one entry in the `characters` array
@@ -41,12 +41,14 @@ Rules:
 WRONG: "characters": [{"name": "John", "position": "left midground"}, {"name": "Mary", "position": "right midground"}]
 RIGHT: "characters": [{"name": "John", "position": "left midground"}], "background": "Mary stands watching from across the room"
 
+### Character Name Continuity (CRITICAL)
+Once a character name is established in panel 1, that EXACT name must appear in the `characters[0].name` field of every subsequent panel. Never use pronouns, "the detective", "the hero", or any variation — always the exact name from panel 1.
+
 ### Position Guidelines
 Position must be one of the ALLOWED POSITIONS. Derive it from shot_type and scene logic:
 - ECU, CU: always "center foreground" — subject fills frame close to camera
 - MS: "center midground" default, shift left/right if scene has directional movement
 - OTS: "center midground" — we see subject from behind shooter who is implicit
-- POV: "center midground" — what the camera sees ahead
 - WS, ELS: "center midground" or "center background" — subject is small in environment
 - Action moving left-to-right across panels: use "left midground" entering, "right midground" exiting
 - Dramatic low/high angle shots: keep horizontal position, adjust depth for drama
@@ -65,9 +67,9 @@ Always specify: torso orientation, arm positions, leg stance, head direction.
 
 ### IP-Adapter Scale
 Controls how strongly the character reference image is enforced. Only include if overriding default:
-- 0.3–0.4: photorealistic or naturally-proportioned human characters (default 0.4)
-- 0.5–0.6: stylized characters, anime, illustration styles
-- 0.6–0.7: highly stylized references where facial recognition is critical
+- 0.5–0.65: photorealistic or naturally-proportioned human characters (default 0.65)
+- 0.65–0.8: stylized characters, anime, illustration styles
+- 0.8–0.10: highly stylized references where facial recognition is critical
 
 ### Output Format
 Your response must be valid JSON only, without any markdown formatting, conversational filler, or introductory text. Output an array containing exactly the requested number of panel objects. 

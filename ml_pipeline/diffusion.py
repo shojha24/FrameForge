@@ -54,7 +54,7 @@ def build_flux_prompt(panel: dict, style: str, scene_bible: str) -> tuple[str, s
         f"Setting: {panel.get('background', '')}. "
         f"{panel.get('lighting_mood', '')} lighting atmosphere. "
         f"{scene_bible}. "
-        f"Cinematic storyboard frame, professional concept art, "
+        f"storyboard frame, professional concept art, "
         f"high detail, single character."
     )
 
@@ -118,16 +118,16 @@ async def _generate_single_panel(
     scene_bible: str,
     panel_idx: int
 ) -> str:
-    prompt, negative = build_flux_prompt(panel_json, style, scene_bible)
+    prompt, _ = build_flux_prompt(panel_json, style, scene_bible)  # discard negative
 
     arguments = {
         "prompt": prompt,
-        "negative_prompt": negative,
         "image_size": {"width": W, "height": H},
         "num_inference_steps": NUM_INFERENCE_STEPS,
         "guidance_scale": GUIDANCE_SCALE,
         "seed": 42 + panel_idx,
-        # ControlNet OpenPose conditioning
+        "loras": [],
+        "controlnets": [],
         "controlnet_unions": [
             {
                 "path": "InstantX/FLUX.1-dev-Controlnet-Union",
@@ -135,22 +135,29 @@ async def _generate_single_panel(
                     {
                         "control_image_url": pose_url,
                         "control_mode": "pose",
-                        "conditioning_scale": 0.55,
+                        # no conditioning_scale here — omit entirely
                     }
                 ],
             }
         ],
     }
 
-    # Add IP-Adapter if character reference provided
-    # Same single call — no second pass needed
     if ip_adapter_url is not None:
         arguments["ip_adapters"] = [
             {
                 "path": "XLabs-AI/flux-ip-adapter",
+                "image_encoder_path": "openai/clip-vit-large-patch14",  # required for XLabs
+                "weight_name": "ip_adapter.safetensors",                 # required for XLabs
                 "image_url": ip_adapter_url,
-                "scale": panel_json.get("ip_adapter_scale", 0.4),
+                "scale": panel_json.get("ip_adapter_scale", 0.65),      # 0.65 = tested sweet spot
             }
+            #    {
+            #       "path": "InstantX/FLUX.1-dev-IP-Adapter",
+            #       "image_encoder_path": "google/siglip-so400m-patch14-384", # <-- The exact SigLIP model
+            #       "weight_name": "ip-adapter.bin",                          # <-- InstantX uses .bin
+            #       "image_url": ip_adapter_url,
+            #       "scale": panel_json.get("ip_adapter_scale", 0.65),  
+            #    }
         ]
 
     result = await fal_client.run_async(
@@ -174,7 +181,7 @@ async def generate_panels(
 
     print(f"[Diffusion] Generating {len(panel_jsons)} panels via Flux ControlNet")
     print(f"[Diffusion] Resolution: {W}×{H}")
-    print(f"[Diffusion] PulID character pass: {'enabled' if ip_adapter_image else 'disabled'}")
+    print(f"[Diffusion] IP-Adapter character pass: {'enabled' if ip_adapter_image else 'disabled'}")
 
     panel_jsons = build_panel_sequence_context(panel_jsons)
 
