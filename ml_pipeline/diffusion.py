@@ -48,8 +48,8 @@ def build_flux_prompt(panel: dict, style: str, scene_bible: str) -> tuple[str, s
     angle = angle_language.get(panel.get("camera_angle", "Eye Level"), "eye level")
 
     prompt = (
-        f"{style} illustration style. "
-        f"{shot}, {angle}. "
+        f"{style.upper()} illustration style. "
+        f"{shot.upper()}, {angle}. "
         f"{panel.get('action_note', '')}. "
         f"Setting: {panel.get('background', '')}. "
         f"{panel.get('lighting_mood', '')} lighting atmosphere. "
@@ -120,6 +120,10 @@ async def _generate_single_panel(
 ) -> str:
     prompt, _ = build_flux_prompt(panel_json, style, scene_bible)  # discard negative
 
+    shot_type = panel_json.get("shot_type", "MS")
+    disable_controlnet_shots = {"CU", "ECU"}  # Close-up and Extreme close-up
+    use_controlnet = shot_type not in disable_controlnet_shots
+
     arguments = {
         "prompt": prompt,
         "image_size": {"width": W, "height": H},
@@ -128,7 +132,10 @@ async def _generate_single_panel(
         "seed": 42 + panel_idx,
         "loras": [],
         "controlnets": [],
-        "controlnet_unions": [
+    }
+
+    if use_controlnet:
+        arguments["controlnet_unions"] = [
             {
                 "path": "InstantX/FLUX.1-dev-Controlnet-Union",
                 "controls": [
@@ -139,8 +146,7 @@ async def _generate_single_panel(
                     }
                 ],
             }
-        ],
-    }
+        ]
 
     if ip_adapter_url is not None:
         arguments["ip_adapters"] = [

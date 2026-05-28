@@ -199,8 +199,9 @@ export function PanelEditorDrawer() {
           </button>
         </div>
 
-        {/* Large Image Preview (Fixed, not scrollable) */}
-        <div className="px-[20px] py-[15px] border-b-2 border-[#000000]">
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-[20px] flex flex-col gap-[20px]">
+          {/* Large Image Preview */}
           <div className="relative aspect-video w-full border-2 border-[#000000] overflow-hidden bg-[#D0D0D0]">
             {selectedPanel.imageUrl ? (
               <img
@@ -228,10 +229,7 @@ export function PanelEditorDrawer() {
               {panelData.shot_type || selectedPanel.shotType}
             </div>
           </div>
-        </div>
 
-        {/* Scrollable Content (Form Fields) */}
-        <div className="flex-1 overflow-y-auto p-[20px] flex flex-col gap-[20px]">
           {/* AI-Generated Prompt (Read-Only) */}
           <div className="flex flex-col gap-[10px]">
             <label 

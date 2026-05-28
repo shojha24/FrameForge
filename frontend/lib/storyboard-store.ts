@@ -43,20 +43,14 @@ async function generatePanels(
 
 async function regeneratePanelAPI(
   panel: StoryboardPanel,
-  customPrompt: string,
-  characterImage: File | null
-): Promise<string> {
-  // Convert panel back to snake_case for backend
-  const panelData = {
-    shotType: panel.shotType,
-    caption: panel.caption,
-    prompt: panel.prompt,
-    // Include any other panel properties
-  }
-  
+  panelJson: any,
+  characterImage: File | null,
+  sceneBible: string = ''
+): Promise<{ imageUrl: string; prompt: string }> {
   const formData = new FormData()
-  formData.append('panel_json', JSON.stringify(panelData))
-  formData.append('custom_prompt', customPrompt)
+  formData.append('panel_json', JSON.stringify(panelJson))
+  formData.append('custom_prompt', '')  // Will be computed server-side from panel JSON + scene_bible
+  formData.append('scene_bible', sceneBible)
   if (characterImage) {
     formData.append('character_image', characterImage)
   }
@@ -73,9 +67,16 @@ async function regeneratePanelAPI(
   
   const data = await response.json()
   
-  // Extract base64 image from response
-  const imageBase64 = data.generated_image
-  return `data:image/png;base64,${imageBase64}`
+  // Extract image and prompt from response
+  const imageUrl = data.generated_image
+    ? `data:image/png;base64,${data.generated_image}` 
+    : ''
+  const prompt = data.sdxl_prompt || ''
+
+  return {
+    imageUrl,
+    prompt
+  }
 }
 
 export type ShotType = 'ECU' | 'CU' | 'MS' | 'WS' | 'ELS' | 'OTS' | 'POV'
@@ -109,6 +110,7 @@ interface StoryboardState {
   panels: StoryboardPanel[]
   selectedPanelId: string | null
   isDrawerOpen: boolean
+  sceneBible: string  // Global context from initial generation
   
   // Actions
   setSceneDescription: (description: string) => void
@@ -121,7 +123,7 @@ interface StoryboardState {
   updatePanelCaption: (id: string, caption: string) => void
   updatePanelShotType: (id: string, shotType: ShotType) => void
   updatePanelPrompt: (id: string, prompt: string) => void
-  regeneratePanel: (id: string) => Promise<void>
+  regeneratePanel: (id: string, panelJson?: any) => Promise<void>
   reorderPanels: (startIndex: number, endIndex: number) => void
   reset: () => void
 }
@@ -159,6 +161,7 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
   panels: [],
   selectedPanelId: null,
   isDrawerOpen: false,
+  sceneBible: '',
 
   setSceneDescription: (description) => set({ sceneDescription: description }),
   
@@ -188,8 +191,16 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
     try {
       const panels = await generatePanels(sceneDescription, style, panelCount, characterImage);
       console.log("Panels generated:", panels);
+      
+      // Extract scene bible from first panel context
+      let sceneBible = ''
+      if (panels.length > 0) {
+        const firstPanel = panels[0]
+        // Build basic scene context from first panel
+        sceneBible = `protagonist in ${firstPanel.caption?.split(',')[0] || 'scene'}, ${style} style`
+      }
   
-      set({ appState: 'generated', panels });
+      set({ appState: 'generated', panels, sceneBible });
     } catch (error) {
       console.error("An Unexpected Error Occured:", error)
       
@@ -198,37 +209,45 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
   },
   
   selectPanel: (id) => set({ selectedPanelId: id, isDrawerOpen: true }),
-  
+
   closeDrawer: () => set({ isDrawerOpen: false, selectedPanelId: null }),
-  
+
   updatePanelCaption: (id, caption) => set((state) => ({
     panels: state.panels.map(p => p.id === id ? { ...p, caption } : p)
   })),
-  
+
   updatePanelShotType: (id, shotType) => set((state) => ({
     panels: state.panels.map(p => p.id === id ? { ...p, shotType } : p)
   })),
-  
+
   updatePanelPrompt: (id, prompt) => set((state) => ({
     panels: state.panels.map(p => p.id === id ? { ...p, prompt } : p)
   })),
-  
-  regeneratePanel: async (id) => {
+
+  regeneratePanel: async (id, panelJson) => {
     const state = get()
     const panel = state.panels.find(p => p.id === id)
     if (!panel) return
     
     try {
-      const newImageUrl = await regeneratePanelAPI(
+      // Use provided panelJson or build from current panel
+      const jsonToSend = panelJson || {
+        shotType: panel.shotType,
+        caption: panel.caption,
+        // Include other panel properties as needed
+      }
+      
+      const result = await regeneratePanelAPI(
         panel,
-        panel.prompt,
-        state.characterImage
+        jsonToSend,
+        state.characterImage,
+        state.sceneBible  // Pass scene bible for consistency
       )
       
-      // Update the panel with the new image
+      // Update the panel with the new image and prompt
       set((state) => ({
         panels: state.panels.map(p => 
-          p.id === id ? { ...p, imageUrl: newImageUrl } : p
+          p.id === id ? { ...p, imageUrl: result.imageUrl, prompt: result.prompt } : p
         )
       }))
     } catch (error) {
@@ -236,14 +255,14 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
       throw error
     }
   },
-  
+
   reorderPanels: (startIndex, endIndex) => set((state) => {
     const newPanels = [...state.panels]
     const [removed] = newPanels.splice(startIndex, 1)
     newPanels.splice(endIndex, 0, removed)
     return { panels: newPanels.map((p, i) => ({ ...p, order: i })) }
   }),
-  
+
   reset: () => set({
     appState: 'empty',
     sceneDescription: '',
@@ -254,5 +273,6 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
     panels: [],
     selectedPanelId: null,
     isDrawerOpen: false,
+    sceneBible: '',
   }),
 }))

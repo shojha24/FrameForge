@@ -154,24 +154,27 @@ async def run_panel_regeneration(
     panel_json: dict,
     custom_prompt: str,
     ip_image_data: str = None,
+    scene_bible: str = "",
     hf_token: str = None
 ) -> dict:
     """
-    Regenerate a single panel with user-edited metadata.
+    Regenerate a single panel with user-edited metadata and global context.
     
     Steps:
     1. Decode character image if provided
-    2. Call diffusion.generate_panels() with single panel (ignoring auto-prompt)
-    3. Return new image + original metadata
+    2. Build SDXL prompt from panel metadata and scene bible
+    3. Call diffusion.generate_panels() with single panel
+    4. Return new image, metadata, and SDXL prompt used
     
     Args:
         panel_json (dict): Edited panel metadata
         custom_prompt (str): Override prompt for generation
         ip_image_data (str, optional): Base64 character reference
+        scene_bible (str, optional): Global context for consistency
         hf_token (str, optional): HuggingFace token
     
     Returns:
-        dict: Contains panel, custom_prompt, generated_image
+        dict: Contains panel, sdxl_prompt, generated_image
     """
     print(f"\n{'='*80}")
     print(f"[Pipeline Orchestrator] Panel Regeneration Request")
@@ -181,8 +184,7 @@ async def run_panel_regeneration(
     print(f"  Shot Type: {panel_json.get('shot_type', 'N/A')}")
     print(f"  Camera Angle: {panel_json.get('camera_angle', 'N/A')}")
     print(f"  Characters: {panel_json.get('characters', [])}")
-    print(f"\n[Custom Prompt Override]")
-    print(f"  {custom_prompt[:100]}{'...' if len(custom_prompt) > 100 else ''}")
+    print(f"  Scene Bible: {scene_bible[:60] if scene_bible else 'None'}{'...' if scene_bible and len(scene_bible) > 60 else ''}")
     
     hf_token = hf_token or HUGGING_FACE_HUB_TOKEN
     
@@ -196,10 +198,18 @@ async def run_panel_regeneration(
         except Exception as e:
             print(f"\n[Pipeline] ⚠️  WARNING: Could not decode character image: {e}")
     
+    # Determine visual style from panel or default
+    visual_style = panel_json.get("visual_style", "cinematic storyboard")
+    
+    # Build SDXL prompt from panel metadata and scene bible
+    sdxl_prompt, _ = diffusion.build_flux_prompt(panel_json, visual_style, scene_bible)
+    print(f"\n[SDXL Prompt Generated]")
+    print(f"  {sdxl_prompt[:100]}{'...' if len(sdxl_prompt) > 100 else ''}")
+    
     # Generate single panel
     try:
         print(f"\n[Pipeline] Regenerating single panel...")
-        # Inject custom_prompt into panel_json if provided
+        # Inject SDXL prompt override if custom_prompt provided (for backward compatibility)
         panel_to_generate = panel_json.copy()
         if custom_prompt:
             panel_to_generate["_override_prompt"] = custom_prompt
@@ -207,7 +217,8 @@ async def run_panel_regeneration(
         generated_images = await diffusion.generate_panels(
             [panel_to_generate],
             ip_adapter_image=ip_image,
-            hf_token=hf_token
+            hf_token=hf_token,
+            scene_bible=scene_bible
         )
         img = generated_images[0]
         print(f"[Pipeline] ✅ Regenerated panel successfully")
@@ -226,6 +237,6 @@ async def run_panel_regeneration(
     
     return {
         "panel": panel_json,
-        "custom_prompt": custom_prompt,
+        "sdxl_prompt": sdxl_prompt,
         "generated_image": img_base64
     }

@@ -130,22 +130,26 @@ async def generate_storyboard(
 @router.post("/regenerate")
 async def regenerate_panel(
     panel_json: str = Form(...),
-    custom_prompt: str = Form(...),
+    custom_prompt: str = Form(default=""),
+    scene_bible: str = Form(default=""),
     character_image: UploadFile = File(None)
 ):
     """
-    Regenerate a single panel with custom prompt.
+    Regenerate a single panel with edited metadata and global context.
     
     Args:
         panel_json (str): JSON string of edited panel metadata
-        custom_prompt (str): Custom SDXL prompt for generation
+        custom_prompt (str, optional): Custom SDXL prompt for generation (for backward compatibility)
+        scene_bible (str, optional): Global context string for visual consistency
         character_image (UploadFile, optional): Character reference image
     
     Returns:
-        dict: Contains panel, custom_prompt, generated_image (base64)
+        dict: Contains panel, sdxl_prompt (the prompt used), generated_image (base64)
     """
     try:
-        print(f"[API] /regenerate: {custom_prompt[:60]}...")
+        print(f"[API] /regenerate: panel editing requested")
+        if scene_bible:
+            print(f"[API] Scene context: {scene_bible[:60]}...")
         
         # Parse panel JSON
         try:
@@ -178,17 +182,17 @@ async def regenerate_panel(
             try:
                 image_bytes = await character_image.read()
                 img = Image.open(io.BytesIO(image_bytes))
-                img.verify()
-                img_bytes = await character_image.read()
-                ip_image_data = base64.b64encode(img_bytes).decode("utf-8")
+                img.load()  # validate without verify()
+                ip_image_data = base64.b64encode(image_bytes).decode("utf-8")
             except Exception as e:
                 print(f"[API] WARNING: Invalid character image: {e}")
         
-        # Call pipeline
+        # Call pipeline with scene_bible
         result = await pipeline.run_panel_regeneration(
             panel_json=panel_data_snake,
             custom_prompt=custom_prompt,
             ip_image_data=ip_image_data,
+            scene_bible=scene_bible,
             hf_token=HUGGING_FACE_HUB_TOKEN
         )
         
