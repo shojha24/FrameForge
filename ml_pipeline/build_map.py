@@ -198,10 +198,10 @@ def build_pose_map(
     squared = _pad_to_square(cropped)
     
     # Step 3: Scale by depth
-    scaled = _scale_by_depth(squared, position_keyword)
+    scaled = _scale_by_depth(squared, position_keyword, shot_type)
     
     # Step 4: Place on canvas
-    canvas = _place_on_canvas(scaled, position_keyword, camera_angle, canvas_width=canvas_width, canvas_height=canvas_height)
+    canvas = _place_on_canvas(scaled, position_keyword, camera_angle, shot_type=shot_type, canvas_width=canvas_width, canvas_height=canvas_height)
     
     return canvas
 
@@ -239,6 +239,6 @@ def get_conditioning_map(
         return None
     
     # Stage 2: Preprocess
-    conditioning_map = build_pose_map(skeleton_img, position_keyword, camera_angle, canvas_width=canvas_width, canvas_height=canvas_height)
+    conditioning_map = build_pose_map(skeleton_img, position_keyword, camera_angle, shot_type=shot_type, canvas_width=canvas_width, canvas_height=canvas_height)
     
     return conditioning_map
