@@ -80,12 +80,20 @@ function PanelCard({ panel, index }: { panel: ReturnType<typeof useStoryboardSto
           border-b-2 border-[#000000]
         "
       >
-        {/* Placeholder image - concrete textured */}
-        <div className="absolute inset-0 skeleton-block flex items-center justify-center">
-          <div className="w-[60px] h-[60px] border-2 border-[#808080] flex items-center justify-center">
-            <span className="text-[24px] font-bold text-[#808080] font-mono">{index + 1}</span>
+        {/* Actual image or placeholder */}
+        {panel.imageUrl ? (
+          <img
+            src={panel.imageUrl}
+            alt={`Panel ${index + 1}`}
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+        ) : (
+          <div className="absolute inset-0 skeleton-block flex items-center justify-center">
+            <div className="w-[60px] h-[60px] border-2 border-[#808080] flex items-center justify-center">
+              <span className="text-[24px] font-bold text-[#808080] font-mono">{index + 1}</span>
+            </div>
           </div>
-        </div>
+        )}
         
         {/* Shot type badge */}
         <div 

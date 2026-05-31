@@ -1,50 +1,242 @@
 """
 Pipeline Orchestrator.
 
-This module coordinates the data flow between the API routing layer (`api.py`), 
-the LLM decomposer (`panel_gen.py`), and the diffusion engine (`diffusion.py`). 
-It handles data formatting, error catching, and the separation of logic between 
-full batch generation and single-panel regeneration.
+Coordinates data flow between API (api.py), LLM decomposer (panel_gen.py),
+and diffusion engine (diffusion.py).
 """
 
-def run_full_generation(scene_prompt: str, visual_style: str, num_panels: int, ip_image_data: str = None) -> dict:
+import base64
+import io
+import sys
+import os
+from PIL import Image
+
+# Ensure project root is in path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
+
+from ml_pipeline import panel_gen, diffusion
+from backend.settings import HUGGING_FACE_HUB_TOKEN
+
+
+def _extract_scene_bible(panel_jsons: list[dict], scene_prompt: str) -> str:
+    # Pull consistent elements from first panel as the visual anchor
+    # No extra LLM call needed — the panels themselves contain this info
+    if not panel_jsons:
+        return ""
+    first = panel_jsons[0]
+    characters = first.get("characters", [])
+    char_name = characters[0].get("name", "") if characters else ""
+    return (
+        f"protagonist: {char_name}, "
+        f"setting: {first.get('background', '')}, "
+        f"tone: {first.get('lighting_mood', '')} lighting"
+    )
+
+
+async def run_full_generation(
+    scene_prompt: str,
+    num_panels: int,
+    visual_style: str,
+    ip_image_data: str = None,
+    hf_token: str = None
+) -> dict:
     """
-    Orchestrates the end-to-end creation of a completely new storyboard.
+    Orchestrates end-to-end storyboard generation.
     
     Steps:
-    1. Passes the raw text to `panel_gen.decompose_scene()`.
-    2. Decodes the base64 `ip_image_data` into a PIL Image.
-    3. Passes the resulting JSON array and PIL image to `diffusion.generate_panels()`.
-    4. Gathers the returned images, compiles the exact text prompts used, and 
-       formats everything into a dictionary ready for the API to return.
-       
+    1. Call panel_gen.decompose_scene() to get panel JSON array
+    2. Decode base64 character image
+    3. Call diffusion.generate_panels() to generate images
+    4. Return compiled result
+    
     Args:
-        scene_prompt (str): Raw scene text.
-        visual_style (str): Chosen aesthetic.
-        num_panels (int): Number of panels to generate.
-        ip_image_data (str, optional): Base64 encoded character reference.
-        
+        scene_prompt (str): Raw scene description
+        num_panels (int): Number of panels
+        ip_image_data (str, optional): Base64 character reference image
+        visual_style (str): Visual style for generation
+        hf_token (str, optional): HuggingFace token
+    
     Returns:
-        dict: A payload containing lists of `panel_jsons`, `sdxl_prompts`, and `generated_images`.
+        dict: Contains panels, generated_images, sdxl_prompts
     """
-    pass
+    print(f"\n{'='*80}")
+    print(f"[Pipeline Orchestrator] Full Generation Request")
+    print(f"{'='*80}")
+    print(f"[Request Summary]")
+    print(f"  Scene: {scene_prompt[:100]}{'...' if len(scene_prompt) > 100 else ''}")
+    print(f"  Panels: {num_panels}")
+    print(f"  Character Reference: {'Yes (provided)' if ip_image_data else 'No'}")
+    
+    hf_token = hf_token or HUGGING_FACE_HUB_TOKEN
+    
+    # Step 1: Decompose scene into panels
+    try:
+        panel_jsons = await panel_gen.decompose_scene(scene_prompt, num_panels, visual_style)
+        print(f"\n[Pipeline] ✅ LLM generated {len(panel_jsons)} panels")
+        for panel in panel_jsons:
+            panel["visual_style"] = visual_style
+    except Exception as e:
+        print(f"\n[Pipeline] ❌ ERROR: LLM decomposition failed: {e}")
+        raise
+    
+    # Step 2: Decode character reference image if provided
+    ip_image = None
+    if ip_image_data:
+        try:
+            # Assume base64 encoded
+            img_bytes = base64.b64decode(ip_image_data)
+            ip_image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+            print(f"[Pipeline] ✅ Loaded character reference: {ip_image.size}")
+        except Exception as e:
+            print(f"[Pipeline] ⚠️  WARNING: Could not decode character image: {e}")
+    
+    # Step 3: Generate images
+    try:
+        print(f"\n[Pipeline] Starting image generation for {len(panel_jsons)} panels...")
+        # In run_full_generation(), after decompose_scene():
+        scene_bible = _extract_scene_bible(panel_jsons, scene_prompt)
 
-def run_panel_regeneration(panel_json: dict, custom_prompt: str, ip_image_data: str = None) -> dict:
-    """
-    Orchestrates the targeted regeneration of a single edited panel.
+        # Update the diffusion call:
+        generated_images = await diffusion.generate_panels(
+            panel_jsons,
+            ip_adapter_image=ip_image,
+            hf_token=hf_token,
+            scene_bible=scene_bible      # add this
+        )
+        print(f"\n[Pipeline] ✅ Generated {len(generated_images)} images")
+    except Exception as e:
+        print(f"\n[Pipeline] ❌ ERROR: Diffusion failed: {e}")
+        raise
     
-    Bypasses the LLM generation step (`panel_gen.py`). Parses the edited `panel_json` 
-    to generate a fresh spatial layout map. Overrides the auto-prompt generator with 
-    the `custom_prompt` provided by the user. Feeds the data directly to the 
-    diffusion pipeline.
+    # Step 4: Build Flux prompts for each panel
+    print(f"\n[Pipeline] Building Flux prompts...")
+    flux_prompts = []
+    for idx, panel in enumerate(panel_jsons, 1):
+        prompt, _ = diffusion.build_flux_prompt(panel, visual_style, scene_bible)
+        flux_prompts.append(prompt)
+    print(f"[Pipeline] ✅ Built {len(flux_prompts)} prompts")
+    
+    # Step 5: Convert images to base64 for API response
+    print(f"\n[Pipeline] Encoding images to base64...")
+    generated_images_b64 = []
+
+    # Save to disk for debugging
+    debug_dir = os.path.join(project_root, "debug_output")
+    os.makedirs(debug_dir, exist_ok=True)
+
+    for idx, img in enumerate(generated_images):
+        # Save to disk
+        save_path = os.path.join(debug_dir, f"panel_{idx+1}.png")
+        img.save(save_path)
+        print(f"[Pipeline] 💾 Saved panel {idx+1} to {save_path}")
+        
+        # Encode to base64
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        generated_images_b64.append(img_base64)
+
+    print(f"[Pipeline] ✅ Encoded {len(generated_images_b64)} images")
+    
+    print(f"\n{'='*80}")
+    print(f"[Pipeline Orchestrator] Generation Complete")
+    print(f"{'='*80}\n")
+    
+    return {
+        "panels": panel_jsons,
+        "generated_images": generated_images_b64,
+        "sdxl_prompts": flux_prompts
+    }
+
+
+async def run_panel_regeneration(
+    panel_json: dict,
+    custom_prompt: str,
+    ip_image_data: str = None,
+    scene_bible: str = "",
+    hf_token: str = None
+) -> dict:
+    """
+    Regenerate a single panel with user-edited metadata and global context.
+    
+    Steps:
+    1. Decode character image if provided
+    2. Build SDXL prompt from panel metadata and scene bible
+    3. Call diffusion.generate_panels() with single panel
+    4. Return new image, metadata, and SDXL prompt used
     
     Args:
-        panel_json (dict): The user-edited metadata for the specific panel.
-        custom_prompt (str): The exact prompt to use for generation.
-        ip_image_data (str, optional): Base64 encoded character reference.
-        
+        panel_json (dict): Edited panel metadata
+        custom_prompt (str): Override prompt for generation
+        ip_image_data (str, optional): Base64 character reference
+        scene_bible (str, optional): Global context for consistency
+        hf_token (str, optional): HuggingFace token
+    
     Returns:
-        dict: A payload containing the single new `panel_json`, `custom_prompt`, 
-              and the single new `generated_image`.
+        dict: Contains panel, sdxl_prompt, generated_image
     """
-    pass
+    print(f"\n{'='*80}")
+    print(f"[Pipeline Orchestrator] Panel Regeneration Request")
+    print(f"{'='*80}")
+    print(f"[Panel Metadata]")
+    print(f"  Caption: {panel_json.get('caption', 'N/A')[:60]}")
+    print(f"  Shot Type: {panel_json.get('shot_type', 'N/A')}")
+    print(f"  Camera Angle: {panel_json.get('camera_angle', 'N/A')}")
+    print(f"  Characters: {panel_json.get('characters', [])}")
+    print(f"  Scene Bible: {scene_bible[:60] if scene_bible else 'None'}{'...' if scene_bible and len(scene_bible) > 60 else ''}")
+    
+    hf_token = hf_token or HUGGING_FACE_HUB_TOKEN
+    
+    # Decode character image if provided
+    ip_image = None
+    if ip_image_data:
+        try:
+            img_bytes = base64.b64decode(ip_image_data)
+            ip_image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+            print(f"\n[Pipeline] ✅ Loaded character reference: {ip_image.size}")
+        except Exception as e:
+            print(f"\n[Pipeline] ⚠️  WARNING: Could not decode character image: {e}")
+    
+    # Determine visual style from panel or default
+    visual_style = panel_json.get("visual_style", "cinematic storyboard")
+    
+    # Build SDXL prompt from panel metadata and scene bible
+    sdxl_prompt, _ = diffusion.build_flux_prompt(panel_json, visual_style, scene_bible)
+    print(f"\n[SDXL Prompt Generated]")
+    print(f"  {sdxl_prompt[:100]}{'...' if len(sdxl_prompt) > 100 else ''}")
+    
+    # Generate single panel
+    try:
+        print(f"\n[Pipeline] Regenerating single panel...")
+        # Inject SDXL prompt override if custom_prompt provided (for backward compatibility)
+        panel_to_generate = panel_json.copy()
+        if custom_prompt:
+            panel_to_generate["_override_prompt"] = custom_prompt
+        
+        generated_images = await diffusion.generate_panels(
+            [panel_to_generate],
+            ip_adapter_image=ip_image,
+            hf_token=hf_token,
+            scene_bible=scene_bible
+        )
+        img = generated_images[0]
+        print(f"[Pipeline] ✅ Regenerated panel successfully")
+    except Exception as e:
+        print(f"[Pipeline] ❌ ERROR: Diffusion failed: {e}")
+        raise
+    
+    # Convert to base64
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+    
+    print(f"\n{'='*80}")
+    print(f"[Pipeline Orchestrator] Regeneration Complete")
+    print(f"{'='*80}\n")
+    
+    return {
+        "panel": panel_json,
+        "sdxl_prompt": sdxl_prompt,
+        "generated_image": img_base64
+    }

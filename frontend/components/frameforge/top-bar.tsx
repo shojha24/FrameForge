@@ -1,10 +1,23 @@
 'use client'
 
 import { FileDown } from 'lucide-react'
+import { useStoryboardStore } from '@/lib/storyboard-store'
+import { exportStoryboardToPDF } from '@/lib/pdf-export'
 
 export function TopBar() {
-  const handleExport = () => {
-    console.log('[v0] Export to PDF triggered')
+  const { panels, appState } = useStoryboardStore()
+
+  const handleExport = async () => {
+    if (panels.length === 0) {
+      console.warn('No storyboard to export')
+      return
+    }
+    
+    try {
+      await exportStoryboardToPDF(panels, 'Storyboard')
+    } catch (error) {
+      console.error('Failed to export PDF:', error)
+    }
   }
 
   return (
@@ -28,6 +41,7 @@ export function TopBar() {
       {/* Export Button */}
       <button
         onClick={handleExport}
+        disabled={appState !== 'generated' || panels.length === 0}
         className="
           flex items-center gap-[10px] px-[20px] py-[10px]
           bg-[#F0F0F0] text-[#1A1A1A] border-2 border-[#000000]
@@ -36,6 +50,7 @@ export function TopBar() {
           hover:bg-[#E30613] hover:text-[#F0F0F0] hover:border-4 hover:px-[18px] hover:py-[8px]
           active:bg-[#990000]
           focus:outline-3 focus:outline-[#000000] focus:outline-offset-0
+          disabled:bg-[#D0D0D0] disabled:text-[#808080] disabled:border-[#808080] disabled:cursor-not-allowed
         "
         style={{ fontFamily: 'var(--font-futura), Century Gothic, sans-serif' }}
       >

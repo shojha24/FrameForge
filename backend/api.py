@@ -3,101 +3,210 @@ API Routing and Schema Definitions for FrameForge.
 
 This module uses FastAPI and Pydantic to define the strict contracts for input
 and output data. It exposes the primary endpoints for full storyboard generation
-and isolated panel regeneration, acting as the interface between the client UI
-and the internal generation pipeline.
-
-Dependencies:
-    - FastAPI (for routing)
-    - Pydantic (for input/output validation schemas)
-    - typing.List, typing.Optional
+and isolated panel regeneration.
 """
-from fastapi import APIRouter, HTTPException
+
+import sys
+import os
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi.responses import JSONResponse
+from PIL import Image
 import json
 import httpx
+import base64
+import io
 
-from settings import API_PREFIX, OPEN_ROUTER_API_KEY, SYSTEM_PROMPT
-from schemas import StoryboardGenerationRequest, PanelRegenerationRequest, StoryboardResponse
+# Ensure project root is in path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from backend.settings import API_PREFIX, OPEN_ROUTER_API_KEY, SYSTEM_PROMPT, HUGGING_FACE_HUB_TOKEN
+from backend.schemas import StoryboardGenerationRequest, PanelRegenerationRequest, StoryboardResponse
+from ml_pipeline import pipeline
 
 router = APIRouter(prefix=API_PREFIX)
 
-@router.post("/generate", response_model=StoryboardResponse)
-async def generate_storyboard(request: StoryboardGenerationRequest):
+
+def _normalize_panel_fields_to_camel_case(panels: list[dict]) -> list[dict]:
     """
-    Initializes the full scene-to-storyboard generation pipeline.
+    Convert panel JSON field names from snake_case to camelCase for frontend compatibility.
     
-    Validates the incoming scene text and reference imagery, then passes the 
-    data to the orchestrator (`pipeline.py`). Returns the structured metadata, 
-    the prompts used, and the generated images.
+    Mapping:
+      shot_type → shotType
+      camera_angle → cameraAngle
+      lighting_mood → lightingMood
+      action_note → actionNote
+    """
+    normalized = []
+    for panel in panels:
+        normalized_panel = {}
+        for key, value in panel.items():
+            if key == "shot_type":
+                normalized_panel["shotType"] = value
+            elif key == "camera_angle":
+                normalized_panel["cameraAngle"] = value
+            elif key == "lighting_mood":
+                normalized_panel["lightingMood"] = value
+            elif key == "action_note":
+                normalized_panel["actionNote"] = value
+            elif key == "pose_query":
+                normalized_panel["poseQuery"] = value
+            elif key == "position":
+                normalized_panel["position"] = value
+            else:
+                normalized_panel[key] = value
+        normalized.append(normalized_panel)
+    return normalized
+
+
+@router.post("/generate")
+async def generate_storyboard(
+    scene_prompt: str = Form(...),
+    num_panels: int = Form(default=5),
+    visual_style: str = Form(default="cinematic, photorealistic"),
+    character_reference: UploadFile = File(None)
+):
+    """
+    Generate a complete storyboard from scene description.
     
     Args:
-        request (StoryboardGenerationRequest): The user's scene and style inputs.
-        
+        scene_prompt (str): Plain English scene description
+        num_panels (int): Number of panels to generate (default 5)
+        visual_style (str): Visual style for image generation
+        character_image (UploadFile, optional): Character reference image (PNG/JPG)
+    
     Returns:
-        StoryboardResponse: The fully generated storyboard payload.
+        dict: Contains panels, generated_images (base64), sdxl_prompts
     """
+    try:
+        ip_image_data = None
+        if character_reference:
+            try:
+                image_bytes = await character_reference.read()  # read once
+                # Validate by opening — don't call verify()
+                img = Image.open(io.BytesIO(image_bytes))
+                img.load()  # actually loads pixels, safe validation
+                # Encode the bytes we already have
+                ip_image_data = base64.b64encode(image_bytes).decode("utf-8")
+                print(f"[API] Character reference image loaded: {len(image_bytes)} bytes")
+            except Exception as e:
+                print(f"[API] WARNING: Invalid character image: {e}")
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": f"Character image is invalid: {e}"}
+                )
 
-    # Generate Story Line Panel Json
-    panel_jsons = await generate_storyboard_panel_json(request.scene_prompt, request.num_panels)
+        
+        # Call pipeline
+        result = await pipeline.run_full_generation(
+            scene_prompt=scene_prompt,
+            num_panels=num_panels,
+            ip_image_data=ip_image_data,
+            visual_style=visual_style,
+            hf_token=HUGGING_FACE_HUB_TOKEN
+        )
+        
+        # Normalize field names for frontend
+        result["panels"] = _normalize_panel_fields_to_camel_case(result["panels"])
+        
+        # Add visual_style to panels
+        for panel in result["panels"]:
+            panel["visualStyle"] = visual_style
+        
+        print(f"[API] /generate completed: {len(result['generated_images'])} images")
+        return result
+        
+    except Exception as e:
+        print(f"[API] ERROR in /generate: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Generation failed: {str(e)}"}
+        )
 
-    # Add style attribute for image generation
-    for panel in panel_jsons:
-        panel["style"] = request.visual_style
 
-    return StoryboardResponse(panel_jsons=panel_jsons)
-
-async def generate_storyboard_panel_json(prompt: str = "", num_panels: int = 1):
-    async with httpx.AsyncClient() as client:
-        print("Calling Scene Decomposer LLM...")
-        user_prompt = f"Panel Count: {num_panels} Scene Description: {prompt}"
-
+@router.post("/regenerate")
+async def regenerate_panel(
+    panel_json: str = Form(...),
+    custom_prompt: str = Form(default=""),
+    scene_bible: str = Form(default=""),
+    character_image: UploadFile = File(None)
+):
+    """
+    Regenerate a single panel with edited metadata and global context.
+    
+    Args:
+        panel_json (str): JSON string of edited panel metadata
+        custom_prompt (str, optional): Custom SDXL prompt for generation (for backward compatibility)
+        scene_bible (str, optional): Global context string for visual consistency
+        character_image (UploadFile, optional): Character reference image
+    
+    Returns:
+        dict: Contains panel, sdxl_prompt (the prompt used), generated_image (base64)
+    """
+    try:
+        print(f"[API] /regenerate: panel editing requested")
+        if scene_bible:
+            print(f"[API] Scene context: {scene_bible[:60]}...")
+        
+        # Parse panel JSON
         try:
-            response = await client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {OPEN_ROUTER_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "nvidia/nemotron-3-nano-30b-a3b:free",
-                    "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                },
-                timeout=60.0  # LLMs take time, don't let it timeout too early
+            panel_data = json.loads(panel_json)
+        except json.JSONDecodeError as e:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": f"Invalid panel JSON: {e}"}
             )
-
-            response.raise_for_status()
-            data = response.json()
-
-            # Extract content
-            content = data['choices'][0]['message']['content']
-
-            # Convert JSON string to List of Dicts
-            panel_jsons = json.loads(content)
-            print("Panels Created Successfully")
-            return panel_jsons
-        except json.JSONDecodeError:
-            # LLMs sometimes hallucinate text around the JSON
-            print("Error: LLM returned invalid JSON")
-            raise HTTPException(status_code=500, detail="LLM output was not valid JSON")
-        except Exception as e:
-            print(f"API Error: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/regenerate", response_model=StoryboardResponse)
-async def regenerate_panel(request: PanelRegenerationRequest):
-    """
-    Regenerates a single specific panel without affecting the rest of the storyboard.
-    
-    Bypasses the LLM scene decomposer and feeds the user's updated panel JSON 
-    and prompt directly into the diffusion pipeline via the orchestrator.
-    
-    Args:
-        request (PanelRegenerationRequest): The updated constraints for the target panel.
         
-    Returns:
-        StoryboardResponse: A payload containing just the single regenerated image 
-                            and its associated metadata.
-    """
-    pass
+        # Convert camelCase back to snake_case
+        panel_data_snake = {}
+        for key, value in panel_data.items():
+            if key == "shotType":
+                panel_data_snake["shot_type"] = value
+            elif key == "cameraAngle":
+                panel_data_snake["camera_angle"] = value
+            elif key == "lightingMood":
+                panel_data_snake["lighting_mood"] = value
+            elif key == "actionNote":
+                panel_data_snake["action_note"] = value
+            elif key == "poseQuery":
+                panel_data_snake["pose_query"] = value
+            else:
+                panel_data_snake[key] = value
+        
+        # Decode character image if provided
+        ip_image_data = None
+        if character_image:
+            try:
+                image_bytes = await character_image.read()
+                img = Image.open(io.BytesIO(image_bytes))
+                img.load()  # validate without verify()
+                ip_image_data = base64.b64encode(image_bytes).decode("utf-8")
+            except Exception as e:
+                print(f"[API] WARNING: Invalid character image: {e}")
+        
+        # Call pipeline with scene_bible
+        result = await pipeline.run_panel_regeneration(
+            panel_json=panel_data_snake,
+            custom_prompt=custom_prompt,
+            ip_image_data=ip_image_data,
+            scene_bible=scene_bible,
+            hf_token=HUGGING_FACE_HUB_TOKEN
+        )
+        
+        # Normalize panel fields for frontend
+        result["panel"] = _normalize_panel_fields_to_camel_case([result["panel"]])[0]
+        
+        print(f"[API] /regenerate completed")
+        return result
+        
+    except Exception as e:
+        print(f"[API] ERROR in /regenerate: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Regeneration failed: {str(e)}"}
+        )
